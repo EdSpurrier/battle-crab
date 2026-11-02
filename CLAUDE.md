@@ -30,11 +30,16 @@ src/tiles.ts    the ground tiles (TILES): canvas-drawn, seeded, seamless; a map'
 src/ground.ts   the beach from a map: engine terrain (levels; one step slopes, more is a cliff) with its top splatted
                 from the tiles; rebuild (levels changed), paint + commit (a cell's tile), setGrid, dispose
 src/mist.ts     MistSet: the map's banks as fog volumes, kept in step with their defs (sync), a thickness over all
+src/props.ts    Props: the map's rocks, boulders, clam and snail shells, driftwood and starfish, one procedural
+                (lumpy, seeded) mesh per kind, an instance per prop stood on the ground; the solid ones
+                (rock, boulder, driftwood) as boxes for shots; pick by reach for the map maker
 src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down the left (SVG paths in TOOLS /
                 ICONS, a tooltip per button from data-tip) with raise / lower / flatten / smooth under a round
                 brush, paint, mist (click empty ground: new bank; click or drag a bank; a bank list for the
-                beach-wide layer), start; the tool's options beside the toolbar (rebuilt per tool); the chosen
-                bank's controls on the right; saves as you go; Download / Load / New in the toolbar
+                beach-wide layer), props (a kind palette; click open ground: new prop; click or drag a prop;
+                size, turn, kind, duplicate, delete on the right), start; the tool's options beside the toolbar
+                (rebuilt per tool); the chosen bank's or prop's controls on the right; saves as you go;
+                Download / Load / New in the toolbar
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
 src/controls.ts the two control schemes (settings or C), topdown the default: "3rd person" (mouse orbits, pointer lock) and "topdown"
                 (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;
@@ -42,14 +47,27 @@ src/controls.ts the two control schemes (settings or C), topdown the default: "3
 src/pick.ts     pickGround: the ground point under a screen position (ray march + bisection on the heightfield)
 src/overlayShapes.ts  bands on the ground (rings, footprints, the aim marker) as overlay data
 src/models.ts   the model viewer (models.html): every .glb in Models/ (import.meta.glob), clips, turntable, wireframe
-src/shell.ts    the Battle Shell: 5 shell types (deck grid, speed / jump / armour, looks), piece kinds (plank, joint,
-                cannon, gatling, machine gun, flamethrower, bommy knocker), a build (shell + pieces in deck cells),
-                cell geometry on the shell, localStorage (the game wears what the build screen last saved)
-src/structure.ts the build drawn on the crab: a mesh per piece in body space, weapons with a moving part (kick, spin)
-src/weapons.ts  Arsenal: the chosen weapon fires on the trigger (cannon balls with gravity, tracers, flame, a swing),
-                shots are particles and a ball mesh; nothing is hit yet
+src/shell.ts    the Battle Shell: 5 shell types (deck grid, speed / jump / armour, looks); materials (wood / metal /
+                stone: hp, weight, burns); piece kinds (plank, beam, joint; cannon, gatling, machine gun,
+                flamethrower, bommy knocker, spiky ball cannon, fireworks gun) with hp and weight; claw kinds (own,
+                tiny / medium / large / uber clampers: scale, damage, weight); a build (shell + pieces + claws);
+                cell geometry (cells may reach OVERHANG past the deck on arms), `supported` / `canPlace` (a piece
+                needs the deck's floor or a held neighbour), buildWeight / weightFactor; localStorage
+src/structure.ts the build drawn on the crab and kept: hp per piece (damage; at 0 it drops as tumbling debris and
+                whatever it held up falls too; onChange), fire on wood (ignite: damage over time, spreads), per-piece
+                hit boxes (boxes: PartRef owners), turrets (aim / pose), the knocker's chain as a pendulum
+src/weapons.ts  Arsenal: ammo per weapon (AMMO; refill), the chosen weapon fires on the trigger: big cannonballs,
+                hitscan tracers, flame (ignites wood), the knocker pumped by holding (hits by ball speed), the spiky
+                ball on a chain (fire, then reel), fireworks rockets that wander and pop; hits hurt crabs and pieces
+src/pickups.ts  ammo crates (refill), health boxes (half back), starfish (8 s invincible); bob, taken by walking over
 src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a lit cell under the pointer; left
                 places, right removes, R turns; weapons take action slots 2-5 in placement order (4 at most)
+src/impacts.ts  World: what shots hit (the heightfield, boulders, the crabs' boxes set each frame in `moving`) with
+                surface and normal; impact effects by surface (sand, rock, shell); wreckFx for a cracked crab
+src/combat.ts   Combatant (health, hurt), DAMAGE per weapon, crabBox (a crab's hit box, owner = the combatant)
+src/enemy.ts    Enemy: a Player with a random shell and build, a blue team tint, a softer Arsenal (damage × 0.3,
+                a wandering aim error); a mind that keeps a distance, circles, fires in bursts, jumps; wrecks at 0
+src/lifebars.ts life bars over opponents (projected through the camera) and the player's along the bottom
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
 src/settings.ts SettingsPanel: sections of toggles / sliders (handle-less bars with an editable number) / choices /
@@ -68,6 +86,15 @@ The build runs locally, so the private engine needs no token in CI.
 ## Assets
 `Models/*.glb` are the game's source models (the siege snail rig is the first); the model viewer lists
 them automatically. Keep the folder flat; a file dropped in shows on the next dev reload or build.
+
+## Weight
+`Player.setWeight(structure.weight() + claws)`: speed and jump scale by `weightFactor` (halved at 45). Called at
+the start and from `structure.onChange` as pieces come off.
+
+## Combat so far
+Three opponents on the beach at a time (main.ts ENEMIES), spawned at least 14 units from the player, one
+replaced 4 s after it is cracked. Health is the shell's armour. Hits flash the crab red. The player cracked
+sits 3 s under a "Cracked!" message, then is back at the spawn, whole. Shots never hit their shooter.
 
 ## Game feel decided so far
 - Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`). Space jumps.

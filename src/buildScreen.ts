@@ -3,7 +3,7 @@ import { Crab } from './crab';
 import { buildGround } from './ground';
 import { defaultMap } from './map';
 import { SettingsPanel } from './settings';
-import { CELL, MAX_WEAPONS, PIECES, SHELLS, cellAt, cellCentre, inGrid, loadBuild, pieceType, saveBuild, shellType, weaponsOf, type Piece, type PieceKind, type ShellBuild, type ShellId } from './shell';
+import { CELL, CLAWS, CLAW_KINDS, MATERIALS, MATERIAL_IDS, MAX_WEAPONS, PIECES, SHELLS, buildWeight, canPlace, cellAt, cellCentre, inReach, loadBuild, pieceType, saveBuild, shellType, weightFactor, weaponsOf, type ClawKind, type Material, type Piece, type PieceKind, type ShellBuild, type ShellId } from './shell';
 import { Structure } from './structure';
 
 /**
@@ -26,8 +26,8 @@ map.mist = [];
 const ground = buildGround(renderer, map);
 const AT: Vec3 = [12, 0, 12];
 let build: ShellBuild = loadBuild();
-let crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), AT, 0, shellType(build.shell));
-let structure = new Structure(renderer, build);
+let crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), AT, 0, shellType(build.shell), build.claws);
+let structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z));
 crab.structure = structure;
 
 const camera = new OrbitCamera();
@@ -45,9 +45,10 @@ const badMaterial = material({ color: [1, 0.3, 0.2], roughness: 1, transparent: 
 const ghost: Instance = { mesh: new Mesh(renderer.gl, box(-CELL / 2, -CELL / 2, -CELL / 2, CELL / 2, CELL / 2, CELL / 2, [1, 1, 1])), model: new Float32Array(16), material: ghostMaterial, hidden: true };
 renderer.instances.push(ghost);
 
-/** What the left button does: place a piece of this kind, or erase ('erase'). */
+/** What the left button does: place a piece of this kind, or erase ('erase'); what building blocks are made of. */
 let piece: PieceKind | 'erase' = 'plank';
 let turn = 0;
+let madeOf: Material = 'wood';
 /** Where a placed piece would go, and which piece the pointer is on (to remove). */
 let target: [number, number, number] | null = null;
 let over: Piece | null = null;
@@ -83,15 +84,15 @@ function pick(): void {
   for (let t = 0; t < 40; t += 0.01) {
     const p: Vec3 = [a[0] + dir[0] * t - off[0], a[1] + dir[1] * t - off[1], a[2] + dir[2] * t - off[2]];
     const c = cellAt(shell, p);
-    if (inGrid(shell, c)) {
+    if (inReach(shell, c)) {
       const hit = occupied(c);
       if (hit) {
         over = hit;
-        if (prev && inGrid(shell, prev) && !occupied(prev)) target = prev;
+        if (prev && inReach(shell, prev) && !occupied(prev)) target = prev;
         return;
       }
       prev = c;
-    } else if (c[1] < 0 && prev && inGrid(shell, prev) && c[0] === prev[0] && c[2] === prev[2]) {
+    } else if (c[1] < 0 && prev && inReach(shell, prev) && c[0] === prev[0] && c[2] === prev[2]) {
       // Through the deck: the bottom cell of that column.
       target = [prev[0], 0, prev[2]];
       return;
@@ -107,28 +108,33 @@ function placeable(): boolean {
   if (!target || piece === 'erase') return false;
   const type = pieceType(piece);
   if (type.weapon && weaponsOf(build).length >= MAX_WEAPONS) return false;
-  // Something to stand on: the deck, or a piece below.
-  return target[1] === 0 || !!occupied([target[0], target[1] - 1, target[2]]);
+  // Something to hold it: the deck's floor, or a held piece next to it (below, beside: an arm reaches out on beams).
+  return canPlace(structure.shell, build.pieces, target);
 }
 
 function rebuild(): void {
   structure.dispose();
-  structure = new Structure(renderer, build);
+  structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z));
   crab.structure = structure;
   saveBuild(build);
   showSlots();
 }
 
-function wearShell(id: ShellId): void {
-  const shell = shellType(id);
-  build = { shell: id, pieces: build.pieces.filter((p) => inGrid(shell, [p.x, p.y, p.z])) };
+/** The crab again (another shell or claws), its build back on. */
+function rebuildCrab(): void {
   structure.dispose();
   crab.dispose();
-  crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), AT, 0, shell);
-  structure = new Structure(renderer, build);
+  crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), AT, 0, shellType(build.shell), build.claws);
+  structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z));
   crab.structure = structure;
   saveBuild(build);
   buildPanel();
+}
+
+function wearShell(id: ShellId): void {
+  const shell = shellType(id);
+  build = { shell: id, pieces: build.pieces.filter((p) => inReach(shell, [p.x, p.y, p.z])), claws: build.claws };
+  rebuildCrab();
 }
 
 // ---------- mouse
@@ -151,7 +157,7 @@ canvas.addEventListener('pointerup', (e) => {
       build.pieces = build.pieces.filter((p) => p !== over);
       rebuild();
     } else if (e.button === 0 && piece !== 'erase' && target && placeable()) {
-      build.pieces.push({ x: target[0], y: target[1], z: target[2], kind: piece, yaw: turn });
+      build.pieces.push({ x: target[0], y: target[1], z: target[2], kind: piece, yaw: turn, ...(pieceType(piece).weapon ? {} : { material: madeOf }) });
       rebuild();
     }
   }
@@ -179,7 +185,7 @@ window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   const byKey = PIECES.find((p) => e.key === p.key);
   if (byKey) setPiece(byKey.kind);
-  if (e.key === '0' || e.code === 'KeyX') setPiece('erase');
+  if (e.code === 'KeyX') setPiece('erase');
   if (e.code === 'KeyR') turn = (turn + 1) % 4;
 });
 
@@ -218,7 +224,10 @@ function showSlots(): void {
   const weapons = weaponsOf(build);
   const lines = ['1 Claws', ...weapons.map((w, i) => `${i + 2} ${pieceType(w.kind).name}`)];
   const spare = MAX_WEAPONS - weapons.length;
-  slotsNote.textContent = `Actions: ${lines.join(' · ')}${spare ? ` · ${spare} slot${spare === 1 ? '' : 's'} free` : ' · full'}`;
+  const weight = buildWeight(build.pieces, build.claws);
+  const f = weightFactor(weight);
+  const shell = structure.shell;
+  slotsNote.textContent = `Actions: ${lines.join(' · ')}${spare ? ` · ${spare} slot${spare === 1 ? '' : 's'} free` : ' · full'}. Weight ${weight.toFixed(1)}: speed × ${(shell.speed * f).toFixed(2)}, jump × ${(shell.jump * f).toFixed(2)}.`;
 }
 
 function buildPanel(): void {
@@ -251,14 +260,47 @@ function buildPanel(): void {
   }
   const eraser = document.createElement('button');
   eraser.type = 'button';
-  eraser.textContent = '0 Eraser';
+  eraser.textContent = 'X Eraser';
   eraser.title = 'Left click removes the piece under the pointer (right click always does).';
   eraser.classList.toggle('on', piece === 'erase');
   eraser.addEventListener('click', () => setPiece('erase'));
   list.appendChild(eraser);
   pieceButtons.set('erase', eraser);
   panel.root.lastElementChild!.appendChild(list);
-  panel.note('Point at the deck or a piece: the lit cell is where it goes. Left places, right removes (or the eraser, 0), R turns a weapon to face another way. A piece needs the deck or a piece under it.');
+  panel.note('Point at the deck or a piece: the lit cell is where it goes. Left places, right removes (or the eraser, X), R turns a weapon to face another way. A piece needs the deck under it or a held piece next to it: beams reach out past the deck.');
+  panel.section('Made of');
+  const mats = document.createElement('div');
+  mats.className = 'buttons';
+  for (const m of MATERIAL_IDS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = MATERIALS[m].name;
+    b.title = `${MATERIALS[m].hp} hit points, weight ${MATERIALS[m].weight}${MATERIALS[m].burns ? ', burns' : ''}`;
+    b.classList.toggle('on', m === madeOf);
+    b.addEventListener('click', () => {
+      madeOf = m;
+      mats.querySelectorAll('button').forEach((el) => el.classList.toggle('on', el === b));
+    });
+    mats.appendChild(b);
+  }
+  panel.root.lastElementChild!.appendChild(mats);
+  panel.note('Planks, beams and joints: wood is light and burns (40 hp); metal is strong and heavy (120 hp); stone is heaviest (90 hp). Every piece can be shot off, and what it held up falls.');
+  panel.section('Claws');
+  const clawList = document.createElement('div');
+  clawList.className = 'buttons';
+  for (const k of CLAW_KINDS) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = CLAWS[k].name;
+    b.title = `${CLAWS[k].blurb} Damage ${CLAWS[k].damage}, weight ${CLAWS[k].weight}.`;
+    b.classList.toggle('on', k === build.claws);
+    b.addEventListener('click', () => {
+      build.claws = k;
+      rebuildCrab();
+    });
+    clawList.appendChild(b);
+  }
+  panel.root.lastElementChild!.appendChild(clawList);
   slotsNote = panel.note('');
   showSlots();
   panel.plain();

@@ -1,7 +1,7 @@
 import type { Renderer, Vec3 } from 'gridfall-engine';
 import { Crab } from './crab';
 import type { Ground } from './ground';
-import { SHELLS, type ShellType } from './shell';
+import { SHELLS, weightFactor, type ClawKind, type ShellType } from './shell';
 
 /**
  * The player: a position on the sand, a facing and a velocity. The camera orbits freely round
@@ -27,6 +27,29 @@ export class Player {
   private vy = 0;
   readonly velocity: Vec3 = [0, 0, 0];
   readonly crab: Crab;
+  /** Hit points: the shell's armour; at zero the crab is cracked. */
+  readonly maxHealth: number;
+  health: number;
+  /** Seconds of invincibility left (a starfish eaten): nothing hurts, and the crab glows. */
+  invincibleFor = 0;
+  private readonly shell: ShellType;
+
+  get alive(): boolean {
+    return this.health > 0;
+  }
+
+  hurt(amount: number): void {
+    if (!this.alive || this.invincibleFor > 0) return;
+    this.health = Math.max(0, this.health - amount);
+    this.crab.flash();
+  }
+
+  /** What is carried on the shell weighs this much: the heavier, the slower and the lower the jump. */
+  setWeight(weight: number): void {
+    const f = weightFactor(weight);
+    this.speed = 4.8 * this.shell.speed * f;
+    this.jumpSpeed = 8 * Math.sqrt(this.shell.jump * f);
+  }
 
   get airborne(): boolean {
     return this.air > 0 || this.vy > 0;
@@ -37,12 +60,24 @@ export class Player {
     this.crab.snap(side);
   }
 
-  constructor(renderer: Renderer, private readonly ground: Ground, start: Vec3, shell: ShellType = SHELLS[0]) {
+  constructor(renderer: Renderer, private readonly ground: Ground, start: Vec3, shell: ShellType = SHELLS[0], claws: ClawKind = 'own') {
     this.position = [start[0], ground.heightAt(start[0], start[2]), start[2]];
-    this.crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), this.position, this.yaw, shell);
-    // The shell's weight: slower with a heavy one, and a lower jump (height goes with the square of the take-off speed).
-    this.speed *= shell.speed;
-    this.jumpSpeed *= Math.sqrt(shell.jump);
+    this.shell = shell;
+    this.crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), this.position, this.yaw, shell, claws);
+    // The shell's own weight: slower with a heavy one, and a lower jump (height goes with the square of the take-off speed).
+    this.setWeight(0);
+    this.maxHealth = shell.armor;
+    this.health = shell.armor;
+  }
+
+  /** Back whole at `at` (a respawn). */
+  revive(at: Vec3): void {
+    this.position[0] = at[0];
+    this.position[2] = at[2];
+    this.position[1] = this.ground.heightAt(at[0], at[2]);
+    this.air = 0;
+    this.vy = 0;
+    this.health = this.maxHealth;
   }
 
   /**
@@ -54,6 +89,11 @@ export class Player {
     const len = Math.hypot(dir[0], dir[2]);
     const x0 = this.position[0];
     const z0 = this.position[2];
+    if (this.invincibleFor > 0) {
+      this.invincibleFor = Math.max(0, this.invincibleFor - dt);
+      const pulse = 0.45 + 0.25 * Math.sin(performance.now() / 90);
+      this.crab.setTeam(this.invincibleFor > 0 ? [1, 0.85, 0.3, pulse] : null);
+    }
     // Jumping: straight up off the ground, down under gravity; the walk carries on in the air.
     if (jump && !this.airborne) this.vy = this.jumpSpeed;
     if (this.airborne) {

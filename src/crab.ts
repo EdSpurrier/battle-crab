@@ -1,5 +1,5 @@
 import { Mesh, MeshBuilder, VERTEX_FLOATS, box, cross, dot, material, normalize, sub, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
-import { SHELLS, type ShellType } from './shell';
+import { CLAWS, SHELLS, type ClawKind, type ShellType } from './shell';
 import type { Structure } from './structure';
 
 /**
@@ -346,11 +346,16 @@ export class Crab {
   private wasAirborne = false;
   private landing = -1;
 
-  constructor(private readonly renderer: Renderer, ground: GroundHeight, at: Vec3, yaw: number, readonly shell: ShellType = SHELLS[0]) {
+  constructor(private readonly renderer: Renderer, ground: GroundHeight, at: Vec3, yaw: number, readonly shell: ShellType = SHELLS[0], readonly clawKind: ClawKind = 'own') {
     this.ground = ground;
     const gl = renderer.gl;
     const skin = material({ roughness: 0.55 });
     const shellSkin = material({ roughness: shell.id === 'cowrie' ? 0.35 : 0.85 });
+    const clamp = material({ roughness: 0.4, metallic: 0.7 });
+    const claws = CLAWS[clawKind];
+    const ck = claws.scale;
+    const clawColor: Vec = claws.metal ? [0.3, 0.3, 0.33] : BODY;
+    const clawMat = claws.metal ? clamp : skin;
     const part = (data: MeshData, mat = skin): Instance => {
       const instance: Instance = { mesh: new Mesh(gl, data), model: new Float32Array(16), material: mat };
       renderer.instances.push(instance);
@@ -454,10 +459,11 @@ export class Crab {
         side: s,
         upper: part(rod(l1, 0.11, LEG)),
         lower: part(rod(l2, 0.095, LEG)),
-        // The pincer, built along +y from the wrist: a fat palm, then the jaws each side of the hinge (local z is up once posed).
-        palm: part(ellipsoid(0, 0.04, 0, 0.19, 0.17, 0.15, LEG, 12, 6)),
-        jawLower: part(ellipsoid(0, 0.3, -0.07, 0.2, 0.34, 0.09, BODY, 12, 6)),
-        jawUpper: part(ellipsoid(0, 0.28, 0.07, 0.18, 0.31, 0.08, BODY, 12, 6)),
+        // The pincer, built along +y from the wrist: a fat palm, then the jaws each side of the hinge (local z is up once posed);
+        // sized by the claws worn (metal clampers come in four sizes).
+        palm: part(ellipsoid(0, 0.04 * ck, 0, 0.19 * ck, 0.17 * ck, 0.15 * ck, claws.metal ? [0.22, 0.22, 0.25] : LEG, 12, 6), clawMat),
+        jawLower: part(ellipsoid(0, 0.3 * ck, -0.07 * ck, 0.2 * ck, 0.34 * ck, 0.09 * ck, clawColor, 12, 6), clawMat),
+        jawUpper: part(ellipsoid(0, 0.28 * ck, 0.07 * ck, 0.18 * ck, 0.31 * ck, 0.08 * ck, clawColor, 12, 6), clawMat),
         snap: -1,
       });
     }
@@ -507,6 +513,10 @@ export class Crab {
     this.lift += (wantLift - this.lift) * (1 - Math.exp(-8 * dt));
     this.centre[1] = at[1] + HEIGHT + this.lift;
     this.wobbleEyes(dt, yaw, velocity);
+    if (this.flashLeft > 0) {
+      this.flashLeft -= dt;
+      if (this.flashLeft <= 0) this.applyTint();
+    }
     for (const claw of this.claws) {
       if (claw.snap < 0) continue;
       claw.snap += dt / SNAP_SECONDS;
@@ -619,6 +629,26 @@ export class Crab {
   /** The body's placement this frame (body space to the world). */
   get body(): Mat4 {
     return this.bodyModel;
+  }
+
+  /** A colour over the whole crab (linear rgb and how much), for telling sides apart; null for its own colours. */
+  private team: [number, number, number, number] | null = null;
+  private flashLeft = 0;
+
+  setTeam(tint: [number, number, number, number] | null): void {
+    this.team = tint;
+    this.applyTint();
+  }
+
+  /** Flash red for a moment (hit). */
+  flash(): void {
+    this.flashLeft = 0.12;
+    this.applyTint();
+  }
+
+  private applyTint(): void {
+    const t = this.flashLeft > 0 ? ([1, 0.15, 0.1, 0.75] as [number, number, number, number]) : this.team;
+    for (const i of this.owned) i.tint = t ?? undefined;
   }
 
   /** Take the crab out of the renderer and free its meshes (the build screen swapping shells). */
