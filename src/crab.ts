@@ -355,7 +355,7 @@ export class Crab {
 
     // The body (what shows in front of the shell), a tiny mouth at its front, the shell and its two spiral whorls curling up and back.
     fixed(ellipsoid(0, 0, 0.1, 0.5, 0.2, 0.42, BODY));
-    fixed(ellipsoid(0, -0.05, 0.515, 0.055, 0.022, 0.025, MOUTH, 10, 5));
+    fixed(ellipsoid(0, -0.04, 0.535, 0.06, 0.024, 0.03, MOUTH, 10, 5));
     // The spire curls up, back and to the crab's right, the way a hermit crab carries its shell.
     fixed(ellipsoid(0, 0.3, -0.3, 0.62, 0.52, 0.75, SHELL, 14, 8), shellSkin);
     fixed(ellipsoid(-0.3, 0.62, -0.75, 0.4, 0.36, 0.42, SHELL_LIGHT, 12, 6), shellSkin);
