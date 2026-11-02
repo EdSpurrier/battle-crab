@@ -30,9 +30,11 @@ src/tiles.ts    the ground tiles (TILES): canvas-drawn, seeded, seamless; a map'
 src/ground.ts   the beach from a map: engine terrain (levels; one step slopes, more is a cliff) with its top splatted
                 from the tiles; rebuild (levels changed), paint + commit (a cell's tile), setGrid, dispose
 src/mist.ts     MistSet: the map's banks as fog volumes, kept in step with their defs (sync), a thickness over all
-src/editor.ts   the map maker (editor.html): orbit camera; raise / lower / flatten under a round brush, paint,
-                mist (click empty ground: new bank; click or drag a bank; a bank list for the beach-wide layer),
-                spawn; the chosen bank's controls on the right; saves as you go; Download / Load / New
+src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down the left (SVG paths in TOOLS /
+                ICONS, a tooltip per button from data-tip) with raise / lower / flatten / smooth under a round
+                brush, paint, mist (click empty ground: new bank; click or drag a bank; a bank list for the
+                beach-wide layer), start; the tool's options beside the toolbar (rebuilt per tool); the chosen
+                bank's controls on the right; saves as you go; Download / Load / New in the toolbar
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
@@ -55,6 +57,9 @@ The build runs locally, so the private engine needs no token in CI.
   crab turns, eased, to face the camera's way and moves relative to it: W/S forward and back along
   the look, A/D a sidestep across it (it does not turn to face a sidestep or a back-pedal).
 - The shell is the build site for the weapon platform; its spire curls up and to the crab's right.
+- The settings panel never pauses the game: keys walk and the mouse orbits while it is open (not over the
+  panel); opening it only gives the cursor back. Camera rig settings (`lift`, `height`, `aim`, `shoulder`,
+  `distance`, `stiffness`): lift raises eye and look-at point together so the camera still faces forward.
 - The camera never goes under the ground: `ThirdPersonCamera.clearance` (a setting) is how high the eye
   stays; the tilt shown is raised from the one asked for when needed. Things close to the eye fade
   (`renderer.nearFade`, a setting); the ground's materials have `nearFade: false` so only what stands on it does.

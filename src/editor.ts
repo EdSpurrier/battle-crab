@@ -6,15 +6,16 @@ import { SettingsPanel } from './settings';
 import { TILES } from './tiles';
 
 /**
- * The map maker: the beach seen from an orbit camera, with tools on the left and, for a chosen
- * mist bank, its controls on the right. Raise, lower and flatten the ground (whole levels under a
- * round brush), paint it with the ground tiles, place mist banks (click empty ground: a new one;
- * click a bank: choose it; drag: move it) and shape each one, set where the crab starts. Every
- * change is saved in the browser as it is made, and the game loads that map; Download keeps a
- * file and Load brings one back.
+ * The map maker: the beach seen from an orbit camera, a toolbar of icons down the left (hover
+ * for what each does), the tool's options beside it and, for a chosen mist bank, its controls on
+ * the right. Raise, lower, flatten and smooth the ground (whole levels under a round brush), paint
+ * it with the ground tiles, place mist banks (click empty ground: a new one; click a bank: choose
+ * it; drag: move it) and shape each one, set where the crab starts. Every change is saved in the
+ * browser as it is made, and the game loads that map; Download keeps a file and Load brings one back.
  */
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 const stats = document.getElementById('stats')!;
+const toolbar = document.getElementById('toolbar')!;
 const renderer = new Renderer(canvas);
 renderer.dayNight.enabled = true;
 renderer.timeOfDay = 0.3;
@@ -23,7 +24,8 @@ renderer.fogRange = [80, 300];
 let map: MapData = loadMap();
 let ground = buildGround(renderer, map);
 const mist = new MistSet(renderer, map.mist);
-ground.setGrid(true);
+let gridOn = true;
+ground.setGrid(gridOn);
 
 const camera = new OrbitCamera();
 camera.target = [map.size / 2, 0, map.size / 2];
@@ -33,7 +35,23 @@ camera.pitch = (50 * Math.PI) / 180;
 
 // ---------- editor state
 
-type Tool = 'raise' | 'lower' | 'flatten' | 'paint' | 'mist' | 'spawn';
+type Tool = 'raise' | 'lower' | 'flatten' | 'smooth' | 'paint' | 'mist' | 'spawn';
+const TOOLS: { id: Tool; name: string; key: string; tip: string; icon: string }[] = [
+  { id: 'raise', name: 'Raise', key: '1', tip: 'Raise the ground a level under the brush.\nHold to keep raising. One step slopes; two or more make a cliff.', icon: '<path d="M3 20h18"/><path d="M6 20c2-6 4-9 6-9s4 3 6 9"/><path d="M12 8V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/>' },
+  { id: 'lower', name: 'Lower', key: '2', tip: 'Lower the ground a level under the brush.\nHold to keep lowering.', icon: '<path d="M3 20h18"/><path d="M6 20c2-6 4-9 6-9s4 3 6 9"/><path d="M12 3v5"/><path d="M9.5 5.5 12 8l2.5-2.5"/>' },
+  { id: 'flatten', name: 'Flatten', key: '3', tip: 'Level the ground under the brush to the height\nwhere you first press; drag to spread that height.', icon: '<path d="M3 17h18"/><path d="M3 7h18"/><path d="M12 9v6"/><path d="M9.5 12.5 12 15l2.5-2.5"/><path d="M9.5 11.5 12 9l2.5 2.5"/>' },
+  { id: 'smooth', name: 'Smooth', key: '4', tip: 'Soften the ground under the brush: each cell moves\ntoward its neighbours. Hold to keep smoothing.', icon: '<path d="M3 20h18"/><path d="M4 14c2.5-4.5 5-4.5 8 0s5.5 4.5 8 0"/>' },
+  { id: 'paint', name: 'Paint', key: '5', tip: 'Paint the ground under the brush with the chosen tile.', icon: '<path d="M20 4c-3 0-9 7-9 7l2 2s7-6 7-9z"/><path d="M11 11c-2 0-4 1-4 4-1 1-2 1-3 1 1 2 3 3 5 3 3 0 4-2 4-4z"/>' },
+  { id: 'mist', name: 'Mist', key: '6', tip: 'Click empty ground for a new mist bank; click a bank\nto choose it; drag to move it. Its controls open on the right.', icon: '<path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.3 1.5A3.3 3.3 0 0 0 7 18z"/>' },
+  { id: 'spawn', name: 'Start', key: '7', tip: 'Where the crab starts: click the ground.', icon: '<path d="M6 21V4"/><path d="M6 4h11l-2.5 4L17 12H6"/>' },
+];
+const ICONS = {
+  grid: '<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/>',
+  download: '<path d="M12 4v11"/><path d="M8 11l4 4 4-4"/><path d="M4 19h16"/>',
+  upload: '<path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M4 19h16"/>',
+  fresh: '<path d="M7 3h7l5 5v13H7z"/><path d="M14 3v5h5"/><path d="M12 11v6M9 14h6"/>',
+  play: '<path d="M7 4l13 8-13 8z"/>',
+};
 let tool: Tool = 'raise';
 let brush = 2.5;
 let tile = 1;
@@ -41,13 +59,14 @@ let selected = -1;
 let flattenTo = 0;
 let saveTimer = 0;
 const toolButtons = new Map<Tool, HTMLButtonElement>();
+let savedNote: HTMLElement | null = null;
 
 /** Save in the browser a moment after the last change (the game picks it up on its next load). */
 function touched(): void {
   window.clearTimeout(saveTimer);
   saveTimer = window.setTimeout(() => {
     const ok = saveMap(map);
-    saved.textContent = ok ? `saved ${new Date().toLocaleTimeString()}` : 'could not save (storage unavailable)';
+    if (savedNote) savedNote.textContent = ok ? `saved ${new Date().toLocaleTimeString()}` : 'could not save (storage unavailable)';
   }, 400);
 }
 
@@ -91,9 +110,9 @@ function groundUnder(clientX: number, clientY: number): Vec3 | null {
 
 // ---------- the brush ring and the chosen bank's outline, drawn on the ground
 
-const ringData = (): OverlayData => ({ vertices: new Float32Array(0), indices: new Uint32Array(0) });
-const ring = { mesh: new OverlayMesh(renderer.gl, ringData()), model: translation(0, 0, 0), onTop: true };
-const outline = { mesh: new OverlayMesh(renderer.gl, ringData()), model: translation(0, 0, 0), onTop: true };
+const empty = (): OverlayData => ({ vertices: new Float32Array(0), indices: new Uint32Array(0) });
+const ring = { mesh: new OverlayMesh(renderer.gl, empty()), model: translation(0, 0, 0), onTop: true };
+const outline = { mesh: new OverlayMesh(renderer.gl, empty()), model: translation(0, 0, 0), onTop: true };
 renderer.overlays.push(ring, outline);
 
 /** A band on the ground along `points` (closed), `width` wide, in a colour. */
@@ -105,7 +124,6 @@ function band(points: Vec3[], width: number, rgba: [number, number, number, numb
     const p = points[i];
     const prev = points[(i + n - 1) % n];
     const next = points[(i + 1) % n];
-    // The outward direction: perpendicular to the path, in the ground plane.
     let dx = next[0] - prev[0];
     let dz = next[2] - prev[2];
     const l = Math.hypot(dx, dz) || 1;
@@ -123,15 +141,18 @@ function band(points: Vec3[], width: number, rgba: [number, number, number, numb
   return { vertices, indices };
 }
 
+const RING_COLOR: Record<Tool, [number, number, number, number]> = {
+  raise: [0.5, 0.9, 1, 0.9], lower: [1, 0.5, 0.4, 0.9], flatten: [1, 0.85, 0.3, 0.9], smooth: [0.6, 1, 0.6, 0.9], paint: [1, 1, 1, 0.9], mist: [1, 1, 1, 0], spawn: [1, 0.85, 0.3, 0.9],
+};
 function showRing(at: Vec3 | null): void {
-  if (!at || tool === 'mist') return ring.mesh.setData(ringData());
+  if (!at || tool === 'mist') return ring.mesh.setData(empty());
   const pts: Vec3[] = [];
   const r = tool === 'spawn' ? 1 : brush;
   for (let i = 0; i < 48; i++) {
     const a = (i / 48) * Math.PI * 2;
     pts.push([at[0] + Math.cos(a) * r, 0, at[2] + Math.sin(a) * r]);
   }
-  ring.mesh.setData(band(pts, 0.1, tool === 'paint' ? [1, 1, 1, 0.9] : tool === 'lower' ? [1, 0.5, 0.4, 0.9] : [0.5, 0.9, 1, 0.9]));
+  ring.mesh.setData(band(pts, 0.1, RING_COLOR[tool]));
 }
 
 /** The four ground corners of bank `d`'s footprint, turned by its yaw. */
@@ -146,8 +167,7 @@ function footprint(d: MistDef): Vec3[] {
 
 function showOutline(): void {
   const d = map.mist[selected];
-  if (!d) return outline.mesh.setData(ringData());
-  // More points along each side so the band follows the ground.
+  if (!d) return outline.mesh.setData(empty());
   const corners = footprint(d);
   const pts: Vec3[] = [];
   for (let i = 0; i < 4; i++) {
@@ -172,7 +192,6 @@ function bankAt(p: Vec3): number {
     const s = Math.sin(a);
     const dx = p[0] - d.center[0];
     const dz = p[2] - d.center[2];
-    // Into the bank's own frame (the inverse turn).
     const lx = dx * c - dz * s;
     const lz = dx * s + dz * c;
     const area = d.size[0] * d.size[2];
@@ -197,19 +216,39 @@ function cellsUnder(at: Vec3, fn: (x: number, z: number, inner: number) => void)
   }
 }
 
-function applyLevels(at: Vec3, step: number): void {
+function setLevels(want: (x: number, z: number, level: number) => number, at: Vec3): void {
   let changed = false;
   cellsUnder(at, (x, z) => {
     const i = z * map.size + x;
-    const want = step === 0 ? flattenTo : Math.max(0, Math.min(MAX_LEVEL, map.levels[i] + step));
-    if (map.levels[i] !== want) {
-      map.levels[i] = want;
+    const w = Math.max(0, Math.min(MAX_LEVEL, Math.round(want(x, z, map.levels[i]))));
+    if (map.levels[i] !== w) {
+      map.levels[i] = w;
       changed = true;
     }
   });
   if (!changed) return;
   ground.rebuild();
   touched();
+}
+
+/** Each cell toward the mean of its neighbours (a 3 × 3 box), from a snapshot so the pass is even. */
+function smoothAt(at: Vec3): void {
+  const before = map.levels.slice();
+  const n = map.size;
+  setLevels((x, z) => {
+    let sum = 0;
+    let count = 0;
+    for (let dz = -1; dz <= 1; dz++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx;
+        const zz = z + dz;
+        if (xx < 0 || zz < 0 || xx >= n || zz >= n) continue;
+        sum += before[zz * n + xx];
+        count++;
+      }
+    }
+    return sum / count;
+  }, at);
 }
 
 function applyPaint(at: Vec3): void {
@@ -225,7 +264,7 @@ function select(i: number): void {
   selected = i;
   showOutline();
   buildBankPanel();
-  refreshBankList();
+  if (tool === 'mist') buildOptions();
 }
 
 function addBank(at: Vec3): void {
@@ -234,6 +273,13 @@ function addBank(at: Vec3): void {
   mist.add(map.mist.length - 1);
   setTool('mist');
   select(map.mist.length - 1);
+  touched();
+}
+
+function deleteBank(): void {
+  if (selected < 0) return;
+  mist.remove(selected);
+  select(-1);
   touched();
 }
 
@@ -250,17 +296,25 @@ let hover: Vec3 | null = null;
 
 function useTool(at: Vec3, first: boolean): void {
   const now = performance.now();
+  const again = first || now - lastApply > 140;
   switch (tool) {
     case 'raise':
     case 'lower':
-      if (first || now - lastApply > 140) {
-        applyLevels(at, tool === 'raise' ? 1 : -1);
+      if (again) {
+        const step = tool === 'raise' ? 1 : -1;
+        setLevels((_x, _z, level) => level + step, at);
         lastApply = now;
       }
       break;
     case 'flatten':
       if (first) flattenTo = ground.levelAt(at[0], at[2]);
-      applyLevels(at, 0);
+      setLevels(() => flattenTo, at);
+      break;
+    case 'smooth':
+      if (again) {
+        smoothAt(at);
+        lastApply = now;
+      }
       break;
     case 'paint':
       applyPaint(at);
@@ -268,7 +322,7 @@ function useTool(at: Vec3, first: boolean): void {
     case 'spawn':
       if (first) {
         map.spawn = [at[0], at[2]];
-        spawnNote.textContent = `crab starts at ${at[0].toFixed(1)}, ${at[2].toFixed(1)}`;
+        buildOptions();
         touched();
       }
       break;
@@ -320,103 +374,40 @@ canvas.addEventListener('pointermove', (e) => {
   else if (button === 1 || (button === 0 && e.shiftKey)) camera.pan(-dx * camera.distance * 0.0016, dy * camera.distance * 0.0016);
   else if (button === 0 && hover) useTool(hover, false);
 });
+canvas.addEventListener('pointerleave', () => (hover = null));
 canvas.addEventListener('wheel', (e) => {
   camera.zoom(e.deltaY > 0 ? 1.1 : 0.9);
   e.preventDefault();
 }, { passive: false });
 window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
-  const pick: Record<string, Tool> = { Digit1: 'raise', Digit2: 'lower', Digit3: 'flatten', Digit4: 'paint', Digit5: 'mist', Digit6: 'spawn' };
-  if (pick[e.code]) setTool(pick[e.code]);
+  const byKey = TOOLS.find((t) => e.key === t.key);
+  if (byKey) setTool(byKey.id);
   if (e.code === 'BracketLeft') setBrush(brush - 0.5);
   if (e.code === 'BracketRight') setBrush(brush + 0.5);
+  if (e.code === 'KeyG') setGrid(!gridOn);
   if ((e.code === 'Delete' || e.code === 'Backspace') && tool === 'mist' && selected >= 0) deleteBank();
 });
 
-// ---------- panels
+// ---------- the toolbar: icons down the left, a tooltip on each
 
-const tools = new SettingsPanel(document.body, 'Map maker', { persist: false, open: true });
-tools.root.classList.add('left');
-let brushSlider: HTMLInputElement | null = null;
-
-function setTool(t: Tool): void {
-  const was = tool;
-  tool = t;
-  toolButtons.forEach((b, k) => b.classList.toggle('on', k === t));
-  if (t !== 'mist' && was === 'mist') select(-1);
+function svg(paths: string): string {
+  return `<svg viewBox="0 0 24 24" aria-hidden="true">${paths}</svg>`;
 }
-function setBrush(v: number): void {
-  brush = Math.max(0.5, Math.min(12, v));
-  if (brushSlider) {
-    brushSlider.value = String(brush);
-    brushSlider.dispatchEvent(new Event('input'));
-  }
-}
-
-tools.section('Tool');
-(['raise', 'lower', 'flatten', 'paint', 'mist', 'spawn'] as Tool[]).forEach((t, i) => {
-  tools.button(`${i + 1} ${t}`, () => setTool(t), { raise: 'raise the ground a level under the brush', lower: 'lower it a level', flatten: 'level the ground under the brush to where you first click', paint: 'paint the ground with the chosen tile', mist: 'click empty ground for a new bank; click a bank to choose it, drag to move it', spawn: 'where the crab starts' }[t]);
-  const bar = tools.root.querySelector('section:last-of-type .buttons')!;
-  toolButtons.set(t, bar.lastElementChild as HTMLButtonElement);
-});
-tools.slider('brush', 'Brush', 0.5, 12, 0.5, () => brush, (v) => (brush = v), 1, 'cells, [ and ] change it');
-brushSlider = tools.root.querySelector('section:last-of-type input[type=range]');
-tools.note('Raise and lower work in whole levels; one step slopes, two or more make a cliff.');
-
-tools.section('Paint with');
-const swatches = document.createElement('div');
-swatches.className = 'swatches';
-TILES.forEach((t, i) => {
+function toolButton(icon: string, name: string, tip: string, onClick: () => void, key = ''): HTMLButtonElement {
   const b = document.createElement('button');
   b.type = 'button';
-  b.className = 'swatch';
-  b.style.background = t.swatch;
-  b.title = t.name;
-  b.addEventListener('click', () => {
-    tile = i;
-    setTool('paint');
-    swatches.querySelectorAll('.swatch').forEach((el, k) => el.classList.toggle('on', k === i));
-  });
-  swatches.appendChild(b);
-});
-tools.root.lastElementChild!.appendChild(swatches);
-swatches.children[tile].classList.add('on');
-const tileNote = tools.note(`tile: ${TILES[tile].name}`);
-swatches.addEventListener('click', () => (tileNote.textContent = `tile: ${TILES[tile].name}`));
-
-tools.section('Mist banks');
-const bankList = document.createElement('div');
-bankList.className = 'buttons';
-tools.root.lastElementChild!.appendChild(bankList);
-tools.note('a number chooses a bank (the beach-wide layer too); on the ground, click a bank or drag it');
-/** The row of bank buttons and New bank, redone whenever banks change. */
-function refreshBankList(): void {
-  bankList.replaceChildren();
-  map.mist.forEach((d, i) => {
-    const b = document.createElement('button');
-    b.type = 'button';
-    b.textContent = String(i + 1);
-    b.title = `${d.size[0]} × ${d.size[2]} at ${d.center[0].toFixed(0)}, ${d.center[2].toFixed(0)}`;
-    b.classList.toggle('on', i === selected);
-    b.addEventListener('click', () => {
-      setTool('mist');
-      select(i);
-    });
-    bankList.appendChild(b);
-  });
-  const add = document.createElement('button');
-  add.type = 'button';
-  add.textContent = '+ New bank';
-  add.title = 'a new bank where the camera looks';
-  add.addEventListener('click', () => addBank([camera.target[0], 0, camera.target[2]]));
-  bankList.appendChild(add);
+  b.innerHTML = svg(icon);
+  b.setAttribute('aria-label', name);
+  b.dataset.tip = `${name}${key ? `  ·  ${key}` : ''}\n${tip}`;
+  b.addEventListener('click', onClick);
+  toolbar.appendChild(b);
+  return b;
 }
-
-tools.section('Map');
-let gridOn = true;
-tools.toggle_('grid', 'Grid', () => gridOn, (v) => { gridOn = v; ground.setGrid(v); });
-const spawnNote = tools.note(`crab starts at ${map.spawn[0].toFixed(1)}, ${map.spawn[1].toFixed(1)}`);
-const saved = tools.note('saved as you go (this browser)');
+for (const t of TOOLS) toolButtons.set(t.id, toolButton(t.icon, t.name, t.tip, () => setTool(t.id), t.key));
+toolbar.appendChild(document.createElement('hr'));
+const gridButton = toolButton(ICONS.grid, 'Grid', 'Lines along the cells, to count by.', () => setGrid(!gridOn), 'G');
+toolButton(ICONS.download, 'Download', 'Keep the map as a .json file.', () => downloadMap(map));
 const file = document.createElement('input');
 file.type = 'file';
 file.accept = 'application/json,.json';
@@ -427,18 +418,92 @@ file.addEventListener('change', async () => {
   if (!f) return;
   try {
     replaceMap(await readMapFile(f));
-    saved.textContent = `loaded ${f.name}`;
+    if (savedNote) savedNote.textContent = `loaded ${f.name}`;
   } catch (err) {
-    saved.textContent = err instanceof Error ? err.message : 'could not load that file';
+    if (savedNote) savedNote.textContent = err instanceof Error ? err.message : 'could not load that file';
   }
   file.value = '';
 });
-tools
-  .button('Download', () => downloadMap(map), 'the map as a .json file')
-  .button('Load…', () => file.click(), 'a map file from your computer')
-  .button('New', () => {
-    if (confirm('Start a new, flat map? The current one is replaced (download it first to keep it).')) replaceMap(defaultMap(map.size));
-  });
+toolButton(ICONS.upload, 'Load', 'Bring back a map file from your computer.', () => file.click());
+toolButton(ICONS.fresh, 'New map', 'Start again with a flat beach (the current map is replaced:\ndownload it first to keep it).', () => {
+  if (confirm('Start a new, flat map? The current one is replaced (download it first to keep it).')) replaceMap(defaultMap(map.size));
+});
+toolbar.appendChild(document.createElement('hr'));
+const play = document.createElement('a');
+play.href = './';
+play.innerHTML = svg(ICONS.play);
+play.dataset.tip = 'Play\nThe game, on this map.';
+play.setAttribute('aria-label', 'Play');
+toolbar.appendChild(play);
+
+function setGrid(on: boolean): void {
+  gridOn = on;
+  ground.setGrid(on);
+  gridButton.classList.toggle('lit', on);
+}
+function setTool(t: Tool): void {
+  const was = tool;
+  tool = t;
+  toolButtons.forEach((b, k) => b.classList.toggle('on', k === t));
+  if (t !== 'mist' && was === 'mist') select(-1);
+  buildOptions();
+}
+function setBrush(v: number): void {
+  brush = Math.max(0.5, Math.min(12, v));
+  buildOptions();
+}
+
+// ---------- the tool's options, beside the toolbar
+
+const options = new SettingsPanel(document.body, '', { persist: false, open: true });
+options.root.classList.add('left');
+
+function buildOptions(): void {
+  options.clear();
+  const t = TOOLS.find((x) => x.id === tool)!;
+  options.section(t.name);
+  if (tool !== 'mist' && tool !== 'spawn') options.slider('brush', 'Brush', 0.5, 12, 0.5, () => brush, (v) => (brush = v), 1, 'cells across; [ and ] change it');
+  if (tool === 'paint') {
+    const swatches = document.createElement('div');
+    swatches.className = 'swatches';
+    TILES.forEach((tl, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `swatch${i === tile ? ' on' : ''}`;
+      b.innerHTML = `<i style="background:${tl.swatch}"></i>${tl.name}`;
+      b.addEventListener('click', () => {
+        tile = i;
+        swatches.querySelectorAll('.swatch').forEach((el, k) => el.classList.toggle('on', k === i));
+      });
+      swatches.appendChild(b);
+    });
+    options.root.lastElementChild!.appendChild(swatches);
+  }
+  if (tool === 'mist') {
+    const list = document.createElement('div');
+    list.className = 'buttons';
+    map.mist.forEach((d, i) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = String(i + 1);
+      b.title = `${d.size[0]} × ${d.size[2]} at ${d.center[0].toFixed(0)}, ${d.center[2].toFixed(0)}`;
+      b.classList.toggle('on', i === selected);
+      b.addEventListener('click', () => select(i));
+      list.appendChild(b);
+    });
+    const add = document.createElement('button');
+    add.type = 'button';
+    add.textContent = '+ New bank';
+    add.title = 'a new bank where the camera looks';
+    add.addEventListener('click', () => addBank([camera.target[0], 0, camera.target[2]]));
+    list.appendChild(add);
+    options.root.lastElementChild!.appendChild(list);
+    options.note(map.mist.length ? 'A number chooses a bank (the beach-wide layer too). On the ground: click a bank, drag to move it, click open sand for a new one.' : 'Click the ground to place the first bank.');
+  }
+  if (tool === 'spawn') options.note(`The crab starts at ${map.spawn[0].toFixed(1)}, ${map.spawn[1].toFixed(1)}. Click the ground to move it.`);
+  savedNote = options.note(savedNote?.textContent || 'saved as you go, in this browser');
+  savedNote.classList.add('status');
+}
 
 /** Swap in another map: the ground, mist and camera follow. */
 function replaceMap(next: MapData): void {
@@ -449,20 +514,14 @@ function replaceMap(next: MapData): void {
   mist.rebuild(map.mist);
   select(-1);
   camera.target = [map.size / 2, 0, map.size / 2];
-  spawnNote.textContent = `crab starts at ${map.spawn[0].toFixed(1)}, ${map.spawn[1].toFixed(1)}`;
+  buildOptions();
   touched();
 }
 
-// The chosen bank's controls, on the right; rebuilt whenever the choice changes.
+// ---------- the chosen bank's controls, on the right; rebuilt whenever the choice changes
+
 const bank = new SettingsPanel(document.body, 'Mist bank', { persist: false, open: false });
 let bankPanelRefresh: (() => void) | null = null;
-
-function deleteBank(): void {
-  if (selected < 0) return;
-  mist.remove(selected);
-  select(-1);
-  touched();
-}
 
 function buildBankPanel(): void {
   bank.clear();
@@ -482,7 +541,7 @@ function buildBankPanel(): void {
     showOutline();
     touched();
   };
-  bank.note(`bank ${i + 1} of ${map.mist.length}: drag it on the ground to move it`);
+  const where = bank.note('');
   bank
     .section('Shape')
     .slider('w', 'Width', 1, map.size, 0.5, () => d.size[0], (v) => part('size', 0, v), 1)
@@ -515,21 +574,19 @@ function buildBankPanel(): void {
     .button('Delete', deleteBank, 'Delete key');
   bank.toggle(true);
   bankPanelRefresh = () => {
-    const field = bank.root.querySelector('p.note');
-    if (field) field.textContent = `bank ${i + 1} of ${map.mist.length}: at ${d.center[0].toFixed(1)}, ${d.center[2].toFixed(1)}`;
+    where.textContent = `bank ${i + 1} of ${map.mist.length} · at ${d.center[0].toFixed(1)}, ${d.center[2].toFixed(1)} · drag it on the ground to move it`;
   };
+  bankPanelRefresh();
 }
 
+setGrid(gridOn);
 setTool('raise');
-refreshBankList();
 
 // ---------- the frame
 
-let last = performance.now();
 let frames = 0;
-let fpsAt = last;
+let fpsAt = performance.now();
 function frame(now: number): void {
-  last = now;
   ground.commit();
   showRing(hover);
   camera.target[1] = ground.heightAt(camera.target[0], camera.target[2]);

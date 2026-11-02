@@ -48,22 +48,24 @@ for (let i = 0; i < 24; i++) {
 renderer.dayNight.enabled = true;
 renderer.timeOfDay = 0.3;
 const look = installLook(document.body, renderer, camera, mist);
+// Opening the panel gives the cursor back (so it can be used); the game plays on underneath:
+// keys still walk, the mouse still orbits whenever it is over the scene rather than the panel.
 look.panel.onToggle = (open) => {
   if (open && locked()) document.exitPointerLock();
-  keys.clear();
 };
 
 // ---------- input: the mouse orbits once it moves, keys walk
 
 const LOOK_SPEED = 0.0022;
 const keys = new Set<string>();
+const overPanel = (e: Event) => e.target instanceof Element && !!e.target.closest('.settings');
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') {
     e.preventDefault();
     look.panel.toggle();
     return;
   }
-  if (!look.panel.open) keys.add(e.code);
+  if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement)) keys.add(e.code);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
@@ -77,7 +79,7 @@ const locked = () => document.pointerLockElement === canvas;
 const CONTROLS = 'mouse to look · WASD to walk · wheel to zoom · Tab for settings';
 hint.textContent = `${CONTROLS} · click to capture the mouse`;
 function capture(e: Event): void {
-  if (locked() || look.panel.open || (e.target instanceof Element && e.target.closest('.settings, a'))) return;
+  if (locked() || overPanel(e) || (e.target instanceof Element && e.target.closest('a'))) return;
   const asked = canvas.requestPointerLock() as unknown;
   if (asked instanceof Promise) {
     asked.catch((err: unknown) => {
@@ -93,7 +95,7 @@ document.addEventListener('pointerlockchange', () => {
   hint.textContent = locked() ? `${CONTROLS} · Esc to release the mouse` : `${CONTROLS} · click to capture the mouse`;
 });
 window.addEventListener('mousemove', (e) => {
-  if (look.panel.open) return;
+  if (!locked() && (overPanel(e) || e.buttons)) return;
   camera.rotate(-e.movementX * LOOK_SPEED, e.movementY * LOOK_SPEED);
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());

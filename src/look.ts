@@ -20,7 +20,7 @@ const FOG_OFF: [number, number] = [1e4, 2e4];
 
 export function installLook(parent: HTMLElement, renderer: Renderer, camera: ThirdPersonCamera, mist: MistSet): Look {
   const post = renderer.post.settings;
-  const panel = new SettingsPanel(parent, 'Settings (Tab)');
+  const panel = new SettingsPanel(parent, 'Settings (Tab) · the game plays on');
 
   // ---------- distance fog: measured from the eye, so in orthographic (the eye pulled far back) it is pushed back as far.
   let fogOn = true;
@@ -55,6 +55,13 @@ export function installLook(parent: HTMLElement, renderer: Renderer, camera: Thi
     .choice('camera.type', 'Projection', ['perspective', 'orthographic'], () => (camera.ortho ? 'orthographic' : 'perspective'), (v) => (camera.ortho = v === 'orthographic'))
     .slider('camera.fov', 'Field of view', 30, 90, 1, () => Math.round((camera.fov * 180) / Math.PI), (v) => (camera.fov = (v * Math.PI) / 180), 0, 'degrees')
     .slider('camera.clearance', 'Above ground', 0, 4, 0.05, () => camera.clearance, (v) => (camera.clearance = v), 2, 'world units the eye keeps above the sand')
+    .section('Camera rig')
+    .slider('rig.lift', 'Lift', -2, 10, 0.1, () => camera.lift, (v) => (camera.lift = v), 1, 'raises the whole camera (eye and look-at point), so it still faces forward')
+    .slider('rig.look', 'Look height', 0, 4, 0.1, () => camera.height, (v) => (camera.height = v), 1, 'how far above the crab\'s feet the camera looks')
+    .slider('rig.aim', 'Aim up', -4, 4, 0.1, () => camera.aim, (v) => (camera.aim = v), 1, 'raises only the look-at point: tips the view up (or down)')
+    .slider('rig.shoulder', 'Shoulder', -4, 4, 0.1, () => camera.shoulder, (v) => (camera.shoulder = v), 1, 'moves the camera to the crab\'s side (over the shoulder)')
+    .slider('rig.distance', 'Distance', 3, 30, 0.5, () => camera.distance, (v) => (camera.distance = v), 1, 'the zoom (the wheel changes it too)')
+    .slider('rig.stiffness', 'Follow', 1, 30, 0.5, () => camera.stiffness, (v) => (camera.stiffness = v), 1, 'how quickly the camera catches up with the crab')
     .toggle_('camera.nearFade', 'Fade what is close', () => renderer.nearFade.enabled, (v) => (renderer.nearFade.enabled = v))
     .slider('camera.nearFadeAt', 'Fade within', 1, 12, 0.25, () => renderer.nearFade.distance, (v) => (renderer.nearFade.distance = v), 2, 'world units from the eye')
     .toggle_('camera.dof', 'Depth of field', () => post.dof, (v) => (post.dof = v))

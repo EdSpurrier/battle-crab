@@ -39,7 +39,21 @@ export class ThirdPersonCamera implements CameraLike {
   groundHeight: ((x: number, z: number) => number) | null = null;
   /** How far above the ground the eye must stay (world units). */
   clearance = 0.6;
+  /**
+   * The rig: the whole camera (eye and the point it looks at) lifted by `lift` and moved
+   * sideways by `shoulder` (right of the crab when positive), so a raised camera still faces
+   * forward rather than down at the crab; `aim` tips the view by raising only the look-at point.
+   */
+  lift = 0;
+  shoulder = 0;
+  aim = 0;
   private tilt = this.pitch;
+
+  /** The point the rig pivots on: the target, lifted and moved to the shoulder. */
+  private pivot(): Vec3 {
+    const r = this.right();
+    return [this.target[0] + r[0] * this.shoulder, this.target[1] + this.lift, this.target[2] + r[2] * this.shoulder];
+  }
 
   /** Where a perspective camera stands for this view: at the zoom distance behind the target. */
   viewPoint(): Vec3 {
@@ -52,7 +66,8 @@ export class ThirdPersonCamera implements CameraLike {
 
   private eyeAt(back: number, tilt = this.tilt): Vec3 {
     const cp = Math.cos(tilt);
-    return [this.target[0] - Math.sin(this.yaw) * cp * back, this.target[1] + Math.sin(tilt) * back, this.target[2] - Math.cos(this.yaw) * cp * back];
+    const p = this.pivot();
+    return [p[0] - Math.sin(this.yaw) * cp * back, p[1] + Math.sin(tilt) * back, p[2] - Math.cos(this.yaw) * cp * back];
   }
 
   /** How far along each view ray the scene starts: the orthographic eye stands ORTHO_BACK back, not at the zoom distance. */
@@ -61,7 +76,8 @@ export class ThirdPersonCamera implements CameraLike {
   }
 
   view(): Mat4 {
-    return lookAt(this.eye(), this.target);
+    const p = this.pivot();
+    return lookAt(this.eye(), [p[0], p[1] + this.aim, p[2]]);
   }
 
   projection(aspect: number): Mat4 {
@@ -107,7 +123,7 @@ export class ThirdPersonCamera implements CameraLike {
       const eye = this.eyeAt(this.distance);
       const floor = this.groundHeight(eye[0], eye[2]) + this.clearance;
       if (eye[1] >= floor) break;
-      const s = Math.min(1, Math.max(-1, (floor - this.target[1]) / this.distance));
+      const s = Math.min(1, Math.max(-1, (floor - this.pivot()[1]) / this.distance));
       this.tilt = Math.max(this.tilt, Math.asin(s));
     }
   }
