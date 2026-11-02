@@ -5,10 +5,10 @@ import { band, emptyOverlay, joinOverlays, ringPoints } from './overlayShapes';
 import { pickGround } from './pick';
 
 /**
- * Two ways to play, switched with a toggle (the settings, or C):
+ * Two ways to play, switched with a toggle (the settings, or C), topdown first:
  * - 3rd person: the camera orbits behind the crab with the mouse (pointer lock), W/S along the
  *   look, A/D across it, the crab facing the camera's way while it moves;
- * - topdown: an orthographic view from 45 degrees above, following the crab (an RTS framing;
+ * - topdown (the default): an orthographic view from 45 degrees above, following the crab (an RTS framing;
  *   Q/E turn it by eighths, the wheel zooms); WASD moves relative to the view; the mouse moves an
  *   aim marker over the ground and the crab always faces it.
  * The third-person camera's settings are kept while in top down and put back on return.
@@ -50,7 +50,7 @@ export class Controls {
   aim: Vec3 | null = null;
   /** The camera's tilt and zoom in top down (settings). */
   topPitch = (45 * Math.PI) / 180;
-  topDistance = 22;
+  topDistance = 30;
   private saved: CameraSnapshot | null = null;
   private mouse: [number, number] | null = null;
   private jumpQueued = false;
@@ -61,6 +61,8 @@ export class Controls {
   constructor(private readonly renderer: Renderer, private readonly camera: ThirdPersonCamera, private readonly canvas: HTMLCanvasElement, private readonly ground: Ground, readonly lookSpeed: number) {
     this.marker = { mesh: new OverlayMesh(renderer.gl, emptyOverlay()), model: translation(0, 0, 0), onTop: true };
     renderer.overlays.push(this.marker);
+    // The game opens in the topdown view (the settings may switch it, and keep the choice).
+    this.setMode('topdown');
   }
 
   get topDown(): boolean {

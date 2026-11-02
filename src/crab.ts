@@ -1,4 +1,6 @@
 import { Mesh, MeshBuilder, VERTEX_FLOATS, box, cross, dot, material, normalize, sub, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { SHELLS, type ShellType } from './shell';
+import type { Structure } from './structure';
 
 /**
  * The crab, built from code: a body poking out of a spiral shell, eye stalks, two claws and
@@ -323,6 +325,11 @@ export class Crab {
   private readonly eyes: Eye[] = [];
   /** Body, shell and eyeballs: built in body space, all placed by one matrix. */
   private readonly bodyModel: Mat4 = new Float32Array(16);
+  private readonly owned: Instance[] = [];
+  /** What is built on the shell, posed with the body. */
+  structure: Structure | null = null;
+  /** Which claw nips next when the claws alternate. */
+  private nextClaw: 1 | -1 = 1;
   private readonly ground: GroundHeight;
   private phase = 0;
   private readonly centre: Vec3 = [0, HEIGHT, 0];
@@ -339,27 +346,41 @@ export class Crab {
   private wasAirborne = false;
   private landing = -1;
 
-  constructor(renderer: Renderer, ground: GroundHeight, at: Vec3, yaw: number) {
+  constructor(private readonly renderer: Renderer, ground: GroundHeight, at: Vec3, yaw: number, readonly shell: ShellType = SHELLS[0]) {
     this.ground = ground;
     const gl = renderer.gl;
     const skin = material({ roughness: 0.55 });
-    const shellSkin = material({ roughness: 0.85 });
+    const shellSkin = material({ roughness: shell.id === 'cowrie' ? 0.35 : 0.85 });
     const part = (data: MeshData, mat = skin): Instance => {
       const instance: Instance = { mesh: new Mesh(gl, data), model: new Float32Array(16), material: mat };
       renderer.instances.push(instance);
+      this.owned.push(instance);
       return instance;
     };
     const fixed = (data: MeshData, mat = skin): void => {
-      renderer.instances.push({ mesh: new Mesh(gl, data), model: this.bodyModel, material: mat });
+      const instance: Instance = { mesh: new Mesh(gl, data), model: this.bodyModel, material: mat };
+      renderer.instances.push(instance);
+      this.owned.push(instance);
     };
 
     // The body (what shows in front of the shell), a tiny mouth at its front, the shell and its two spiral whorls curling up and back.
     fixed(ellipsoid(0, 0, 0.1, 0.5, 0.2, 0.42, BODY));
     fixed(ellipsoid(0, -0.04, 0.535, 0.06, 0.024, 0.03, MOUTH, 10, 5));
-    // The spire curls up, back and to the crab's right, the way a hermit crab carries its shell.
-    fixed(ellipsoid(0, 0.3, -0.3, 0.62, 0.52, 0.75, SHELL, 14, 8), shellSkin);
-    fixed(ellipsoid(-0.3, 0.62, -0.75, 0.4, 0.36, 0.42, SHELL_LIGHT, 12, 6), shellSkin);
-    fixed(ellipsoid(-0.58, 0.9, -0.95, 0.22, 0.2, 0.24, SHELL, 10, 5), shellSkin);
+    // The shell (its kind sets the colour and size), the spire curling up, back and to the crab's right, the way a hermit
+    // crab carries it; a flat deck on top is where the Battle Shell is built.
+    const k = shell.scale;
+    fixed(ellipsoid(0, 0.3, -0.3, 0.62 * k, 0.5 * k, 0.75 * k, shell.color, 14, 8), shellSkin);
+    fixed(ellipsoid(-0.42 * k, 0.62 * k, -0.9 * k, 0.38 * k, 0.34 * k, 0.4 * k, shell.light, 12, 6), shellSkin);
+    fixed(ellipsoid(-0.7 * k, 0.9 * k, -1.1 * k, 0.21 * k, 0.19 * k, 0.23 * k, shell.color, 10, 5), shellSkin);
+    {
+      const [cols, rows] = shell.grid;
+      const hw = (cols * 0.3) / 2 + 0.03;
+      const hd = (rows * 0.3) / 2 + 0.03;
+      // Sunk a little into the dome, thick enough that its underside meets the shell.
+      const top = 0.3 + 0.45 * k;
+      fixed(box(-hw, top - 0.16, -0.22 - hd, hw, top, -0.22 + hd, [0.38, 0.25, 0.12]), shellSkin);
+      fixed(box(-hw + 0.02, top - 0.012, -0.22 - hd + 0.02, hw - 0.02, top + 0.004, -0.22 + hd - 0.02, [0.3, 0.19, 0.09]), shellSkin);
+    }
     // Eye stalks and big googly eyes: a white ball on each stalk, a pupil that slides about on it.
     for (const s of [-1, 1]) {
       const base: Vec3 = [s * 0.14, 0.08, 0.42];
@@ -589,6 +610,28 @@ export class Crab {
     if (claw && claw.snap < 0) claw.snap = 0;
   }
 
+  /** Snap with whichever claw is next (left, right, left…). */
+  snapNext(): void {
+    this.snap(this.nextClaw);
+    this.nextClaw = this.nextClaw === 1 ? -1 : 1;
+  }
+
+  /** The body's placement this frame (body space to the world). */
+  get body(): Mat4 {
+    return this.bodyModel;
+  }
+
+  /** Take the crab out of the renderer and free its meshes (the build screen swapping shells). */
+  dispose(): void {
+    const gone = new Set(this.owned);
+    const list = this.renderer.instances;
+    let k = 0;
+    for (let i = 0; i < list.length; i++) if (!gone.has(list[i])) list[k++] = list[i];
+    list.length = k;
+    for (const i of this.owned) i.mesh.dispose();
+    this.owned.length = 0;
+  }
+
   /**
    * Googly eyes: each pupil is a weight on a spring in the eyeball, jolted the other way whenever the
    * crab speeds up, slows, turns or jumps, and settling back to looking forward.
@@ -656,6 +699,7 @@ export class Crab {
 
   private pose(yaw: number, speed: number): void {
     poseBody(this.bodyModel, this.centre, yaw);
+    this.structure?.pose(this.bodyModel);
     const forward = toWorldDir([0, 0, 1], yaw);
     const sweep = this.blink >= 0 ? BLINK_SWEEP * Math.sin(this.blink * Math.PI) : 0;
     for (const eye of this.eyes) {

@@ -12,7 +12,7 @@ forked per game.
 ## Commands
 ```bash
 npm install          # installs gridfall-engine from GitHub at the tag in package.json (and builds it)
-npm run dev          # http://localhost:5182 (the game), /editor.html (the map maker), /models.html (the model viewer)
+npm run dev          # http://localhost:5182 (the game), /build.html (the Battle Shell), /editor.html (the map maker), /models.html (models)
 npm run dev:engine   # the same, but on ../gridfall-engine's source (an engine feature being built next door)
 npm run typecheck    # tsc --noEmit
 npm run build        # typecheck + vite build
@@ -36,12 +36,20 @@ src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down 
                 beach-wide layer), start; the tool's options beside the toolbar (rebuilt per tool); the chosen
                 bank's controls on the right; saves as you go; Download / Load / New in the toolbar
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
-src/controls.ts the two control schemes (settings or C): "3rd person" (mouse orbits, pointer lock) and "topdown"
+src/controls.ts the two control schemes (settings or C), topdown the default: "3rd person" (mouse orbits, pointer lock) and "topdown"
                 (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;
                 Q/E turn); the third-person camera's settings are kept while in top down
 src/pick.ts     pickGround: the ground point under a screen position (ray march + bisection on the heightfield)
 src/overlayShapes.ts  bands on the ground (rings, footprints, the aim marker) as overlay data
 src/models.ts   the model viewer (models.html): every .glb in Models/ (import.meta.glob), clips, turntable, wireframe
+src/shell.ts    the Battle Shell: 5 shell types (deck grid, speed / jump / armour, looks), piece kinds (plank, joint,
+                cannon, gatling, machine gun, flamethrower, bommy knocker), a build (shell + pieces in deck cells),
+                cell geometry on the shell, localStorage (the game wears what the build screen last saved)
+src/structure.ts the build drawn on the crab: a mesh per piece in body space, weapons with a moving part (kick, spin)
+src/weapons.ts  Arsenal: the chosen weapon fires on the trigger (cannon balls with gravity, tracers, flame, a swing),
+                shots are particles and a ball mesh; nothing is hit yet
+src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a lit cell under the pointer; left
+                places, right removes, R turns; weapons take action slots 2-5 in placement order (4 at most)
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
 src/settings.ts SettingsPanel: sections of toggles / sliders (handle-less bars with an editable number) / choices /
@@ -64,8 +72,9 @@ them automatically. Keep the folder flat; a file dropped in shows on the next de
 ## Game feel decided so far
 - Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`). Space jumps.
   The gait steps slowly with long strides (STEP_TRIGGER, STEP_SECONDS, STEP_LEAD in crab.ts).
-- Left mouse button snaps the crab's left pincer, right button its right (`Crab.snap`): the claw
-  thrusts forward and the hinged upper jaw shuts at the peak. Googly eyes: pupils are weights on springs.
+- Actions: 1 is the claws, 2-5 the weapons on the shell in build order. The left button fires the chosen
+  action (claws take turns: `Crab.snapNext`); the right button aims down the barrel (`camera.aimZoom`:
+  narrower view, camera in). Googly eyes: pupils are weights on springs.
 - The mouse orbits the camera with no button held (pointer lock on any click, Esc releases). A
   standing crab does not turn with the camera (you can look at its face). While any key is held the
   crab turns, eased, to face the camera's way and moves relative to it: W/S forward and back along
