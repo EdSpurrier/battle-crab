@@ -12,7 +12,7 @@ forked per game.
 ## Commands
 ```bash
 npm install          # installs gridfall-engine from GitHub at the tag in package.json (and builds it)
-npm run dev          # http://localhost:5182 (the game) and /editor.html (the map maker)
+npm run dev          # http://localhost:5182 (the game), /editor.html (the map maker), /models.html (the model viewer)
 npm run dev:engine   # the same, but on ../gridfall-engine's source (an engine feature being built next door)
 npm run typecheck    # tsc --noEmit
 npm run build        # typecheck + vite build
@@ -36,6 +36,12 @@ src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down 
                 beach-wide layer), start; the tool's options beside the toolbar (rebuilt per tool); the chosen
                 bank's controls on the right; saves as you go; Download / Load / New in the toolbar
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
+src/controls.ts the two control schemes (settings or C): third person (mouse orbits, pointer lock) and top down
+                (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;
+                Q/E turn); the third-person camera's settings are kept while in top down
+src/pick.ts     pickGround: the ground point under a screen position (ray march + bisection on the heightfield)
+src/overlayShapes.ts  bands on the ground (rings, footprints, the aim marker) as overlay data
+src/models.ts   the model viewer (models.html): every .glb in Models/ (import.meta.glob), clips, turntable, wireframe
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
 src/settings.ts SettingsPanel: sections of toggles / sliders (handle-less bars with an editable number) / choices /
@@ -50,6 +56,10 @@ src/ui.css      the HUD (black text, no shadow), crosshair and panel styles, sha
 `npm run deploy` builds with `--base=/battle-crab/` and pushes `dist/` to the `gh-pages` branch
 (the `gh-pages` package); GitHub Pages serves that branch at https://edspurrier.github.io/battle-crab/.
 The build runs locally, so the private engine needs no token in CI.
+
+## Assets
+`Models/*.glb` are the game's source models (the siege snail rig is the first); the model viewer lists
+them automatically. Keep the folder flat; a file dropped in shows on the next dev reload or build.
 
 ## Game feel decided so far
 - The mouse orbits the camera with no button held (pointer lock on any click, Esc releases). A

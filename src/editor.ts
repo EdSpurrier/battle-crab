@@ -1,7 +1,9 @@
-import { OrbitCamera, OverlayMesh, Renderer, invert, multiply, transformPoint, translation, type OverlayData, type Vec3 } from 'gridfall-engine';
+import { OrbitCamera, OverlayMesh, Renderer, translation, type OverlayData, type Vec3 } from 'gridfall-engine';
 import { buildGround } from './ground';
 import { MAX_LEVEL, defaultMap, downloadMap, loadMap, mistDef, readMapFile, saveMap, type MapData, type MistDef } from './map';
 import { MistSet } from './mist';
+import { band as bandOn, emptyOverlay as empty, ringPoints } from './overlayShapes';
+import { pickGround } from './pick';
 import { SettingsPanel } from './settings';
 import { TILES } from './tiles';
 
@@ -72,87 +74,23 @@ function touched(): void {
 
 // ---------- picking: a point on the ground under the mouse
 
-function groundUnder(clientX: number, clientY: number): Vec3 | null {
-  const r = canvas.getBoundingClientRect();
-  const nx = ((clientX - r.left) / r.width) * 2 - 1;
-  const ny = 1 - ((clientY - r.top) / r.height) * 2;
-  const inv = invert(multiply(camera.projection(r.width / r.height), camera.view()));
-  const un = (z: number): Vec3 => {
-    const p = transformPoint(inv, [nx, ny, z]);
-    return [p[0] / p[3], p[1] / p[3], p[2] / p[3]];
-  };
-  const a = un(-1);
-  const b = un(1);
-  const dir: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-  const len = Math.hypot(dir[0], dir[1], dir[2]);
-  dir[0] /= len; dir[1] /= len; dir[2] /= len;
-  const h = (x: number, z: number) => (x < 0 || z < 0 || x >= map.size || z >= map.size ? 0 : ground.heightAt(x, z));
-  let t0 = 0;
-  for (let t = 0.5; t < 400; t += 0.5) {
-    const p: Vec3 = [a[0] + dir[0] * t, a[1] + dir[1] * t, a[2] + dir[2] * t];
-    if (p[1] <= h(p[0], p[2])) {
-      // Between t0 (above) and t (below): close in.
-      let lo = t0;
-      let hi = t;
-      for (let i = 0; i < 12; i++) {
-        const m = (lo + hi) / 2;
-        const q: Vec3 = [a[0] + dir[0] * m, a[1] + dir[1] * m, a[2] + dir[2] * m];
-        if (q[1] <= h(q[0], q[2])) hi = m;
-        else lo = m;
-      }
-      const m = (lo + hi) / 2;
-      return [a[0] + dir[0] * m, a[1] + dir[1] * m, a[2] + dir[2] * m];
-    }
-    t0 = t;
-  }
-  return null;
-}
+const groundUnder = (clientX: number, clientY: number): Vec3 | null => pickGround(camera, canvas, clientX, clientY, (x, z) => ground.heightAt(x, z), map.size);
 
 // ---------- the brush ring and the chosen bank's outline, drawn on the ground
 
-const empty = (): OverlayData => ({ vertices: new Float32Array(0), indices: new Uint32Array(0) });
 const ring = { mesh: new OverlayMesh(renderer.gl, empty()), model: translation(0, 0, 0), onTop: true };
 const outline = { mesh: new OverlayMesh(renderer.gl, empty()), model: translation(0, 0, 0), onTop: true };
 renderer.overlays.push(ring, outline);
 
 /** A band on the ground along `points` (closed), `width` wide, in a colour. */
-function band(points: Vec3[], width: number, rgba: [number, number, number, number]): OverlayData {
-  const n = points.length;
-  const vertices = new Float32Array(n * 2 * 7);
-  const indices = new Uint32Array(n * 6);
-  for (let i = 0; i < n; i++) {
-    const p = points[i];
-    const prev = points[(i + n - 1) % n];
-    const next = points[(i + 1) % n];
-    let dx = next[0] - prev[0];
-    let dz = next[2] - prev[2];
-    const l = Math.hypot(dx, dz) || 1;
-    dx /= l; dz /= l;
-    const ox = dz;
-    const oz = -dx;
-    const y = ground.heightAt(p[0], p[2]) + 0.04;
-    const w = width / 2;
-    const o = i * 14;
-    vertices.set([p[0] - ox * w, y, p[2] - oz * w, rgba[0], rgba[1], rgba[2], rgba[3]], o);
-    vertices.set([p[0] + ox * w, y, p[2] + oz * w, rgba[0], rgba[1], rgba[2], rgba[3]], o + 7);
-    const j = (i + 1) % n;
-    indices.set([i * 2, j * 2, j * 2 + 1, i * 2, j * 2 + 1, i * 2 + 1], i * 6);
-  }
-  return { vertices, indices };
-}
+const band = (points: Vec3[], width: number, rgba: [number, number, number, number]): OverlayData => bandOn(points, width, rgba, (x, z) => ground.heightAt(x, z));
 
 const RING_COLOR: Record<Tool, [number, number, number, number]> = {
   raise: [0.5, 0.9, 1, 0.9], lower: [1, 0.5, 0.4, 0.9], flatten: [1, 0.85, 0.3, 0.9], smooth: [0.6, 1, 0.6, 0.9], paint: [1, 1, 1, 0.9], mist: [1, 1, 1, 0], spawn: [1, 0.85, 0.3, 0.9],
 };
 function showRing(at: Vec3 | null): void {
   if (!at || tool === 'mist') return ring.mesh.setData(empty());
-  const pts: Vec3[] = [];
-  const r = tool === 'spawn' ? 1 : brush;
-  for (let i = 0; i < 48; i++) {
-    const a = (i / 48) * Math.PI * 2;
-    pts.push([at[0] + Math.cos(a) * r, 0, at[2] + Math.sin(a) * r]);
-  }
-  ring.mesh.setData(band(pts, 0.1, RING_COLOR[tool]));
+  ring.mesh.setData(band(ringPoints(at[0], at[2], tool === 'spawn' ? 1 : brush), 0.1, RING_COLOR[tool]));
 }
 
 /** The four ground corners of bank `d`'s footprint, turned by its yaw. */

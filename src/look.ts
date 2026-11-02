@@ -1,5 +1,6 @@
 import type { Renderer } from 'gridfall-engine';
 import type { ThirdPersonCamera } from './camera';
+import { CONTROL_MODES, type ControlMode, type Controls } from './controls';
 import type { MistSet } from './mist';
 import { SettingsPanel } from './settings';
 
@@ -18,9 +19,14 @@ export interface Look {
 
 const FOG_OFF: [number, number] = [1e4, 2e4];
 
-export function installLook(parent: HTMLElement, renderer: Renderer, camera: ThirdPersonCamera, mist: MistSet): Look {
+export function installLook(parent: HTMLElement, renderer: Renderer, camera: ThirdPersonCamera, mist: MistSet, controls: Controls): Look {
   const post = renderer.post.settings;
   const panel = new SettingsPanel(parent, 'Settings (Tab) · the game plays on');
+
+  panel
+    .section('Controls')
+    .choice('controls.mode', 'Scheme', CONTROL_MODES, () => controls.mode, (v) => controls.setMode(v as ControlMode));
+  panel.note('C switches too. Third person: mouse orbits, WASD walks along the look. Top down: WASD moves on the view, the mouse aims a marker on the ground, Q/E turn the view.');
 
   // ---------- distance fog: measured from the eye, so in orthographic (the eye pulled far back) it is pushed back as far.
   let fogOn = true;

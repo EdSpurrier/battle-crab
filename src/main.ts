@@ -1,5 +1,6 @@
-import { Mesh, Renderer, box, material, multiply, rotationY, translation, type Vec3 } from 'gridfall-engine';
+import { Mesh, Renderer, box, material, multiply, rotationY, translation } from 'gridfall-engine';
 import { ThirdPersonCamera } from './camera';
+import { Controls } from './controls';
 import { buildGround } from './ground';
 import { installLook } from './look';
 import { loadMap } from './map';
@@ -8,14 +9,17 @@ import { Player } from './player';
 
 /**
  * Battle Crab, first light: the beach from the map (the one last saved in the map maker, or the
- * default), the crab, a third-person camera orbiting it. Click anywhere to take the mouse (Esc
- * gives it back); the mouse orbits the camera round the crab; W/S walk forward and back along the
- * look and A/D sidestep across it, the crab facing the camera's way while it moves; the wheel
- * zooms, Tab opens the settings.
+ * default), the crab, and two ways to play (src/controls.ts; the settings or C switch):
+ * third person (click to take the mouse, Esc gives it back; the mouse orbits the camera, W/S
+ * walk along the look and A/D sidestep, the crab facing the camera's way while it moves) and top
+ * down (an orthographic view from above following the crab; WASD moves on the view, the mouse
+ * aims a marker on the ground that the crab faces, Q/E turn the view). The wheel zooms, Tab
+ * opens the settings; the game plays on underneath them.
  */
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 const stats = document.getElementById('stats')!;
 const hint = document.getElementById('hint')!;
+const crosshair = document.getElementById('crosshair')!;
 const renderer = new Renderer(canvas);
 
 const map = loadMap();
@@ -44,78 +48,79 @@ for (let i = 0; i < 24; i++) {
   renderer.instances.push({ mesh: new Mesh(renderer.gl, rock), model: multiply(translation(x, ground.heightAt(x, z), z), rotationY(rand() * Math.PI)), material: rockMaterial });
 }
 
-// Light and look: the sky model's sun, held at mid-morning (the clock does not run yet); the settings panel (Tab).
+// Light and look: the sky model's sun, held at mid-morning (the clock does not run yet).
 renderer.dayNight.enabled = true;
 renderer.timeOfDay = 0.3;
-const look = installLook(document.body, renderer, camera, mist);
-// Opening the panel gives the cursor back (so it can be used); the game plays on underneath:
-// keys still walk, the mouse still orbits whenever it is over the scene rather than the panel.
+
+// ---------- input
+
+const LOOK_SPEED = 0.0022;
+const controls = new Controls(renderer, camera, canvas, ground, LOOK_SPEED);
+const look = installLook(document.body, renderer, camera, mist, controls);
+// Opening the panel gives the cursor back (so it can be used); the game plays on underneath.
 look.panel.onToggle = (open) => {
   if (open && locked()) document.exitPointerLock();
 };
 
-// ---------- input: the mouse orbits once it moves, keys walk
-
-const LOOK_SPEED = 0.0022;
 const keys = new Set<string>();
 const overPanel = (e: Event) => e.target instanceof Element && !!e.target.closest('.settings');
+const typing = (e: Event) => e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement;
 window.addEventListener('keydown', (e) => {
   if (e.code === 'Tab') {
     e.preventDefault();
     look.panel.toggle();
     return;
   }
-  if (!(e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement)) keys.add(e.code);
+  if (typing(e)) return;
+  if (e.code === 'KeyC') {
+    controls.toggle();
+    look.panel.refresh();
+    return;
+  }
+  if (controls.key(e.code)) return;
+  keys.add(e.code);
 });
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 
-// The mouse orbits the camera whenever it moves, no button held. A press anywhere on the window
-// (not in the settings panel) locks the pointer to the game: hidden cursor, no screen edge to run
-// into, Esc releases it. Asked for on the press and again on the click of the same gesture, so the
-// press that gives the window focus is enough. Where locking is refused (some embedded browsers)
-// the bare mouse movement still orbits.
+// Third person: a press anywhere on the window (not in the settings panel) locks the pointer to the
+// game: hidden cursor, no screen edge to run into, Esc releases it. Asked for on the press and again
+// on the click of the same gesture, so the press that gives the window focus is enough. Where locking
+// is refused (some embedded browsers) the bare mouse movement still orbits. Top down keeps the cursor.
 const locked = () => document.pointerLockElement === canvas;
-const CONTROLS = 'mouse to look · WASD to walk · wheel to zoom · Tab for settings';
-hint.textContent = `${CONTROLS} · click to capture the mouse`;
+const THIRD = 'mouse to look · WASD to walk · wheel to zoom · Tab for settings · C for top down';
+const TOP = 'mouse to aim · WASD to move · Q/E turn the view · wheel to zoom · Tab for settings · C for third person';
+function showHint(): void {
+  if (controls.topDown) hint.textContent = TOP;
+  else hint.textContent = `${THIRD} · ${locked() ? 'Esc to release the mouse' : 'click to capture the mouse'}`;
+}
+controls.onModeChange = (mode) => {
+  crosshair.hidden = mode === 'top down';
+  if (mode === 'top down' && locked()) document.exitPointerLock();
+  showHint();
+};
+// The settings may have put a scheme in place already (a saved choice): show it.
+controls.onModeChange(controls.mode);
 function capture(e: Event): void {
-  if (locked() || overPanel(e) || (e.target instanceof Element && e.target.closest('a'))) return;
+  if (controls.topDown || locked() || overPanel(e) || (e.target instanceof Element && e.target.closest('a'))) return;
   const asked = canvas.requestPointerLock() as unknown;
   if (asked instanceof Promise) {
     asked.catch((err: unknown) => {
       const name = err instanceof Error ? err.name : '';
-      if (name === 'SecurityError') hint.textContent = `${CONTROLS} (this browser will not capture the mouse)`;
+      if (name === 'SecurityError') hint.textContent = `${THIRD} (this browser will not capture the mouse)`;
       else console.warn('pointer lock refused this time:', err);
     });
   }
 }
 window.addEventListener('mousedown', capture);
 window.addEventListener('click', capture);
-document.addEventListener('pointerlockchange', () => {
-  hint.textContent = locked() ? `${CONTROLS} · Esc to release the mouse` : `${CONTROLS} · click to capture the mouse`;
-});
-window.addEventListener('mousemove', (e) => {
-  if (!locked() && (overPanel(e) || e.buttons)) return;
-  camera.rotate(-e.movementX * LOOK_SPEED, e.movementY * LOOK_SPEED);
-});
+document.addEventListener('pointerlockchange', showHint);
+window.addEventListener('mousemove', (e) => controls.mouseMoved(e, overPanel(e), locked()));
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 canvas.addEventListener('wheel', (e) => {
   camera.zoom(e.deltaY > 0 ? 1.1 : 0.9);
   e.preventDefault();
 }, { passive: false });
-
-/** The walk direction from the keys held, in the camera's frame on the ground: W/S along the look, A/D across it. */
-function walkDirection(): Vec3 {
-  let f = 0;
-  let r = 0;
-  if (keys.has('KeyW') || keys.has('ArrowUp')) f += 1;
-  if (keys.has('KeyS') || keys.has('ArrowDown')) f -= 1;
-  if (keys.has('KeyD') || keys.has('ArrowRight')) r += 1;
-  if (keys.has('KeyA') || keys.has('ArrowLeft')) r -= 1;
-  const fw = camera.forward();
-  const rt = camera.right();
-  return [fw[0] * f + rt[0] * r, 0, fw[2] * f + rt[2] * r];
-}
 
 // ---------- the frame
 
@@ -125,7 +130,8 @@ let fpsAt = last;
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  player.update(dt, walkDirection(), camera.yaw);
+  const intent = controls.update(keys, player.position);
+  player.update(dt, intent.dir, intent.faceYaw, intent.faceAlways);
   camera.update(dt);
   look.update();
   renderer.time = now / 1000;

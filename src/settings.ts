@@ -39,6 +39,8 @@ export class SettingsPanel {
   private readonly store: string | null;
   private section_: HTMLElement | null = null;
   private open_ = false;
+  /** Per control: show the live value again (after a change made elsewhere, a key toggling a setting). */
+  private readonly refreshers: (() => void)[] = [];
   /** Called with the new state when the panel opens or closes. */
   onToggle: ((open: boolean) => void) | null = null;
 
@@ -87,7 +89,13 @@ export class SettingsPanel {
   clear(): this {
     for (const el of Array.from(this.root.children)) if (el.tagName !== 'H2') el.remove();
     this.section_ = null;
+    this.refreshers.length = 0;
     return this;
+  }
+
+  /** Every control shows its live value again (something changed a setting from outside the panel). */
+  refresh(): void {
+    for (const r of this.refreshers) r();
   }
 
   /** A checkbox. */
@@ -102,6 +110,7 @@ export class SettingsPanel {
       set(input.checked);
       this.save(key, input.checked);
     });
+    this.refreshers.push(() => (input.checked = get()));
     row.appendChild(input);
     return this;
   }
@@ -151,6 +160,7 @@ export class SettingsPanel {
       e.stopPropagation();
     });
     field.addEventListener('blur', () => show(get()));
+    this.refreshers.push(() => show(get()));
     row.appendChild(input);
     row.appendChild(field);
     return this;
@@ -173,6 +183,7 @@ export class SettingsPanel {
       set(select.value);
       this.save(key, select.value);
     });
+    this.refreshers.push(() => (select.value = get()));
     row.appendChild(select);
     return this;
   }
@@ -189,6 +200,7 @@ export class SettingsPanel {
       set(hexToLinear(input.value));
       this.save(key, input.value);
     });
+    this.refreshers.push(() => (input.value = linearToHex(get())));
     row.appendChild(input);
     return this;
   }
