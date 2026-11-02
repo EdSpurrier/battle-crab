@@ -85,6 +85,15 @@ export class ThirdPersonCamera implements CameraLike {
     return lookAt(this.eye(), [p[0], p[1] + this.aim, p[2]]);
   }
 
+  /** The way the camera looks (unit): through the crosshair. */
+  lookDir(): Vec3 {
+    const e = this.eye();
+    const p = this.pivot();
+    const d: Vec3 = [p[0] - e[0], p[1] + this.aim - e[1], p[2] - e[2]];
+    const l = Math.hypot(d[0], d[1], d[2]) || 1;
+    return [d[0] / l, d[1] / l, d[2] / l];
+  }
+
   projection(aspect: number): Mat4 {
     const fov = this.fov * (1 - 0.5 * this.aimed);
     if (!this.ortho) return perspective(fov, aspect, this.near, this.far);

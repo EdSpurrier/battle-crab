@@ -1,7 +1,8 @@
-import { Mesh, Renderer, box, material, multiply, rotationY, translation } from 'gridfall-engine';
+import { Renderer, type Vec3 } from 'gridfall-engine';
 import { ThirdPersonCamera } from './camera';
 import { Controls } from './controls';
 import { buildGround } from './ground';
+import { World } from './impacts';
 import { installLook } from './look';
 import { loadMap } from './map';
 import { MistSet } from './mist';
@@ -29,7 +30,6 @@ const actionBar = document.getElementById('actions')!;
 const renderer = new Renderer(canvas);
 
 const map = loadMap();
-const SIZE = map.size;
 const ground = buildGround(renderer, map);
 const mist = new MistSet(renderer, map.mist);
 const camera = new ThirdPersonCamera();
@@ -39,25 +39,10 @@ const shell = shellType(build.shell);
 const player = new Player(renderer, ground, [map.spawn[0], 0, map.spawn[1]], shell);
 const structure = new Structure(renderer, build);
 player.crab.structure = structure;
-const arsenal = new Arsenal(renderer, structure, (x, z) => ground.heightAt(x, z));
+const world = new World((x, z) => ground.heightAt(x, z));
+const arsenal = new Arsenal(renderer, structure, world);
 camera.follow = player.position;
 camera.target = [player.position[0], player.position[1] + camera.height, player.position[2]];
-
-// A few boulders so walking has something to walk past (boxes, for now).
-let seed = 11;
-const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
-const rockMaterial = material({ roughness: 0.9 });
-for (let i = 0; i < 24; i++) {
-  const x = 4 + rand() * (SIZE - 8);
-  const z = 4 + rand() * (SIZE - 8);
-  if (Math.hypot(x - map.spawn[0], z - map.spawn[1]) < 4) continue;
-  const w = 0.6 + rand() * 1.4;
-  const h = 0.5 + rand() * 1.2;
-  const d = 0.6 + rand() * 1.4;
-  const shade = 0.1 + rand() * 0.08;
-  const rock = box(-w / 2, 0, -d / 2, w / 2, h, d / 2, [shade, shade * 0.95, shade * 0.9]);
-  renderer.instances.push({ mesh: new Mesh(renderer.gl, rock), model: multiply(translation(x, ground.heightAt(x, z), z), rotationY(rand() * Math.PI)), material: rockMaterial });
-}
 
 // Light and look: the sky model's sun, held at mid-morning (the clock does not run yet).
 renderer.dayNight.enabled = true;
@@ -189,7 +174,19 @@ function frame(now: number): void {
   last = now;
   const intent = controls.update(keys, player.position);
   player.update(dt, intent.dir, intent.faceYaw, intent.faceAlways, intent.run, intent.jump);
-  arsenal.update(dt, player.crab.body);
+  // Where the player aims: in topdown the ground marker; in 3rd person what the crosshair is on (or far
+  // along the look). The crosshair ray starts just past the crab, so a camera looking down at it does
+  // not aim at the ground under its own feet.
+  let aimAt = controls.aim;
+  if (!controls.topDown) {
+    const eye = camera.eye();
+    const dir = camera.lookDir();
+    const past = camera.focusDistance() + 1.2;
+    const from: Vec3 = [eye[0] + dir[0] * past, eye[1] + dir[1] * past, eye[2] + dir[2] * past];
+    const hit = world.raycast(from, dir, 120);
+    aimAt = hit ? hit.point : [from[0] + dir[0] * 120, from[1] + dir[1] * 120, from[2] + dir[2] * 120];
+  }
+  arsenal.update(dt, player.crab.body, aimAt);
   camera.update(dt);
   look.update();
   renderer.time = now / 1000;

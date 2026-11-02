@@ -1,4 +1,5 @@
 import { Mesh, MeshBuilder, material, transformPoint, translation, type Instance, type Mat4, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { impactFx, type Hit, type World } from './impacts';
 import { pieceType } from './shell';
 import type { Mounted, Structure } from './structure';
 
@@ -7,7 +8,9 @@ import type { Mounted, Structure } from './structure';
  * slot 1 is the claws, the crab's own). The trigger is held or released; each weapon makes of it
  * what it is: a cannon lobs a ball per pull, the guns stream tracers while held (the gatling
  * after spinning up), the flamethrower pours flame while held, the knocker swings per pull.
- * Shots are looks for now: nothing is hit yet.
+ * The guns hit at once (a ray against the world; the tracer lasts as long as it takes to get
+ * there, and the hit's effect plays when it does); a cannonball flies, falls and hits what it
+ * meets. Nothing takes damage yet.
  */
 
 interface Ball {
@@ -17,7 +20,15 @@ interface Ball {
   life: number;
 }
 
+/** A gun's hit, due when its tracer gets there. */
+interface Pending {
+  at: number;
+  hit: Hit;
+}
+
 const BALL: Vec = [0.12, 0.12, 0.13];
+const TRACER_SPEED = 70;
+const GUN_RANGE = 80;
 
 export class Arsenal {
   /** The chosen weapon, an index into the structure's weapons (-1: none, the claws). */
@@ -27,10 +38,12 @@ export class Arsenal {
   private readonly cooldown = new Map<Mounted, number>();
   private readonly spinRate = new Map<Mounted, number>();
   private readonly balls: Ball[] = [];
+  private readonly pending: Pending[] = [];
+  private clock = 0;
   private readonly ballMesh: Mesh;
   private readonly ballMaterial = material({ roughness: 0.5, metallic: 0.5 });
 
-  constructor(private readonly renderer: Renderer, public structure: Structure, private readonly groundHeight: (x: number, z: number) => number) {
+  constructor(private readonly renderer: Renderer, public structure: Structure, private readonly world: World) {
     const b = new MeshBuilder();
     const segs = 8;
     const rings = 5;
@@ -58,11 +71,23 @@ export class Arsenal {
     this.held = down;
   }
 
-  /** A frame: fire what the trigger asks of the chosen weapon, move the balls, ease the kicks. */
-  update(dt: number, body: Mat4): void {
+  /**
+   * A frame: fire what the trigger asks of the chosen weapon, move the balls, ease the kicks. Shots
+   * go toward `aimAt` (the crosshair's point in the world, the ground marker) when given, else the
+   * way the weapon is mounted.
+   */
+  update(dt: number, body: Mat4, aimAt: Vec3 | null = null): void {
+    this.clock += dt;
     const w = this.weapon;
     const pulled = this.pulled;
     this.pulled = false;
+    // Gun hits whose tracers have arrived.
+    for (let i = this.pending.length - 1; i >= 0; i--) {
+      if (this.pending[i].at <= this.clock) {
+        impactFx(this.renderer, this.pending[i].hit, 1);
+        this.pending.splice(i, 1);
+      }
+    }
     for (const m of this.structure.weapons) {
       m.kick = Math.max(0, m.kick - dt * (m.piece.kind === 'knocker' ? 1.6 : 6));
       this.cooldown.set(m, Math.max(0, (this.cooldown.get(m) ?? 0) - dt));
@@ -76,14 +101,20 @@ export class Arsenal {
     }
     if (w) {
       const muzzle = this.point(body, w.muzzleLocal);
-      const facing = this.direction(body, w.facingLocal);
+      let facing = this.direction(body, w.facingLocal);
+      if (aimAt) {
+        const d: Vec3 = [aimAt[0] - muzzle[0], aimAt[1] - muzzle[1], aimAt[2] - muzzle[2]];
+        const l = Math.hypot(d[0], d[1], d[2]);
+        // Only ahead of the weapon: it does not shoot back through the crab.
+        if (l > 0.5 && d[0] * facing[0] + d[1] * facing[1] + d[2] * facing[2] > 0) facing = [d[0] / l, d[1] / l, d[2] / l];
+      }
       const cool = this.cooldown.get(w) ?? 0;
       switch (w.piece.kind) {
         case 'cannon':
           if (pulled && cool <= 0) {
             this.cooldown.set(w, 1);
             w.kick = 1;
-            this.ball(muzzle, [facing[0] * 16, 3 + facing[1] * 16, facing[2] * 16]);
+            this.ball(muzzle, this.lob(muzzle, aimAt, facing));
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 14, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 5, dir: facing, cone: 0.35, life: 0.18, size: 0.14, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 24, color: [0.55, 0.55, 0.55], colorTo: [0.3, 0.3, 0.3], speed: 2.5, dir: facing, cone: 0.5, up: 0.6, life: 1.6, size: 0.3, drag: 1.2, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
           }
@@ -119,23 +150,22 @@ export class Arsenal {
           break;
       }
     }
-    // The balls fly, fall and land in a puff of sand.
+    // The balls fly, fall and hit what they meet: the ground in a burst of sand, a boulder in sparks and chips.
     for (let i = this.balls.length - 1; i >= 0; i--) {
       const b = this.balls[i];
       b.vel[1] -= 20 * dt;
-      b.pos[0] += b.vel[0] * dt;
-      b.pos[1] += b.vel[1] * dt;
-      b.pos[2] += b.vel[2] * dt;
+      const next: Vec3 = [b.pos[0] + b.vel[0] * dt, b.pos[1] + b.vel[1] * dt, b.pos[2] + b.vel[2] * dt];
       b.life -= dt;
-      const g = this.groundHeight(b.pos[0], b.pos[2]);
-      if (b.pos[1] <= g + 0.07 || b.life <= 0) {
-        this.renderer.particles.emit(b.pos[0], g + 0.1, b.pos[2], { count: 40, color: [0.75, 0.66, 0.46], colorTo: [0.6, 0.52, 0.36], speed: 3, up: 3.5, life: 0.9, size: 0.22, gravity: 6, drag: 0.8, alpha: 0.8, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+      const hit = this.world.segment(b.pos, next);
+      if (hit || b.life <= 0) {
+        if (hit) impactFx(this.renderer, hit, 4);
         const list = this.renderer.instances;
         const k = list.indexOf(b.instance);
         if (k >= 0) list.splice(k, 1);
         this.balls.splice(i, 1);
         continue;
       }
+      b.pos = next;
       translation(b.pos[0], b.pos[1], b.pos[2], b.instance.model);
     }
   }
@@ -145,15 +175,43 @@ export class Arsenal {
     return m ? pieceType(m.piece.kind).name : 'Claws';
   }
 
+  /**
+   * A cannonball's velocity: a lob at a fixed angle that comes down on the aim point (gravity 20),
+   * within what the cannon can throw; with nothing to aim at, a standard shot the way it faces.
+   */
+  private lob(from: Vec3, aimAt: Vec3 | null, facing: Vec3): Vec3 {
+    const g = 20;
+    const angle = (32 * Math.PI) / 180;
+    if (aimAt) {
+      const dx = aimAt[0] - from[0];
+      const dz = aimAt[2] - from[2];
+      const D = Math.hypot(dx, dz);
+      const dy = aimAt[1] - from[1];
+      const denom = 2 * Math.cos(angle) * Math.cos(angle) * (D * Math.tan(angle) - dy);
+      if (D > 0.5 && denom > 0) {
+        const v = Math.min(26, Math.max(5, Math.sqrt((g * D * D) / denom)));
+        const h = v * Math.cos(angle);
+        return [(dx / D) * h, v * Math.sin(angle), (dz / D) * h];
+      }
+    }
+    return [facing[0] * 16, 3 + facing[1] * 16, facing[2] * 16];
+  }
+
   private ball(at: Vec3, vel: Vec3): void {
     const instance: Instance = { mesh: this.ballMesh, model: translation(at[0], at[1], at[2]), material: this.ballMaterial };
     this.renderer.instances.push(instance);
     this.balls.push({ instance, pos: [at[0], at[1], at[2]], vel, life: 6 });
   }
 
+  /** A gun's shot: a ray against the world, a tracer that lasts as long as the flight, the hit due when it lands. */
   private tracer(muzzle: Vec3, facing: Vec3, spread: number): void {
-    const dir: Vec3 = [facing[0] + (Math.random() - 0.5) * spread, facing[1] + (Math.random() - 0.5) * spread, facing[2] + (Math.random() - 0.5) * spread];
-    this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 1, color: [1, 0.9, 0.5], colorTo: [1, 0.6, 0.2], speed: 70, dir, cone: 0, life: 0.35, size: 0.05, stretch: 10, vary: 0, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark' });
+    const d: Vec3 = [facing[0] + (Math.random() - 0.5) * spread, facing[1] + (Math.random() - 0.5) * spread, facing[2] + (Math.random() - 0.5) * spread];
+    const l = Math.hypot(d[0], d[1], d[2]) || 1;
+    const dir: Vec3 = [d[0] / l, d[1] / l, d[2] / l];
+    const hit = this.world.raycast(muzzle, dir, GUN_RANGE);
+    const flight = (hit ? hit.distance : GUN_RANGE) / TRACER_SPEED;
+    if (hit) this.pending.push({ at: this.clock + flight, hit });
+    this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 1, color: [1, 0.95, 0.7], colorTo: [1, 0.7, 0.3], speed: TRACER_SPEED, dir, cone: 0, life: Math.max(0.02, flight), size: 0.11, stretch: 12, vary: 0, fadeCurve: 'none', sizeCurve: 'none', shape: 'spark' });
     this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 3, color: [1, 0.8, 0.4], colorTo: [1, 0.4, 0.1], speed: 2, dir: facing, cone: 0.6, life: 0.08, size: 0.1, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
   }
 

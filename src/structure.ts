@@ -31,7 +31,8 @@ function scaledMesh(data: MeshData, s: number, y0: number): MeshData {
 function scaledShape(shape: Shape, s: number): Shape {
   const y0 = -H;
   const pt = (p?: [number, number, number]): [number, number, number] | undefined => (p ? [p[0] * s, y0 + (p[1] - y0) * s, p[2] * s] : undefined);
-  return { fixed: scaledMesh(shape.fixed, s, y0), moving: shape.moving ? scaledMesh(shape.moving, s, y0) : undefined, pivot: pt(shape.pivot), muzzle: pt(shape.muzzle) };
+  // The moving part is built about its pivot (which is scaled with the piece), so it scales about its own origin.
+  return { fixed: scaledMesh(shape.fixed, s, y0), moving: shape.moving ? scaledMesh(shape.moving, s, 0) : undefined, pivot: pt(shape.pivot), muzzle: pt(shape.muzzle) };
 }
 
 function ellipsoid(cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, color: Vec, segs = 10, rings = 6): MeshData {
@@ -112,8 +113,9 @@ function shapeOf(kind: Piece['kind']): Shape {
     case 'machinegun':
       return {
         fixed: merge([box(-0.04, -H, -0.04, 0.04, -0.02, 0.04, IRON), box(-0.06, -0.02, -0.12, 0.06, 0.08, 0.1, IRON_LIGHT), box(-0.03, -0.12, -0.02, 0.03, -0.02, 0.06, BRASS)]),
-        moving: box(-0.02, 0.01, 0.08, 0.02, 0.05, 0.3, IRON),
-        pivot: [0, 0.03, 0.08],
+        // The barrel, about its pivot at the front of the body: it slides straight back into it on the recoil.
+        moving: merge([box(-0.02, -0.02, -0.02, 0.02, 0.02, 0.22, IRON), box(-0.03, -0.03, 0.16, 0.03, 0.03, 0.22, IRON_LIGHT)]),
+        pivot: [0, 0.03, 0.1],
         muzzle: [0, 0.03, 0.32],
       };
     case 'flamethrower':
