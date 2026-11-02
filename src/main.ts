@@ -18,6 +18,7 @@ const renderer = new Renderer(canvas);
 const SIZE = 64;
 const ground = buildGround(renderer, SIZE);
 const camera = new ThirdPersonCamera();
+camera.groundHeight = (x, z) => ground.heightAt(x, z);
 const player = new Player(renderer, ground, [SIZE / 2, 0, SIZE / 2]);
 camera.follow = player.position;
 camera.target = [player.position[0], player.position[1] + camera.height, player.position[2]];
@@ -62,18 +63,27 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => keys.clear());
 
-// The mouse orbits the camera whenever it moves, no button held. A click anywhere on the window
+// The mouse orbits the camera whenever it moves, no button held. A press anywhere on the window
 // (not in the settings panel) locks the pointer to the game: hidden cursor, no screen edge to run
-// into, Esc releases it. Where locking is refused (some embedded browsers) the bare mouse
-// movement still orbits.
+// into, Esc releases it. Asked for on the press and again on the click of the same gesture, so the
+// press that gives the window focus is enough. Where locking is refused (some embedded browsers)
+// the bare mouse movement still orbits.
 const locked = () => document.pointerLockElement === canvas;
 const CONTROLS = 'mouse to look · WASD to walk · wheel to zoom · Tab for settings';
 hint.textContent = `${CONTROLS} · click to capture the mouse`;
-window.addEventListener('click', (e) => {
+function capture(e: Event): void {
   if (locked() || look.panel.open || (e.target instanceof Element && e.target.closest('.settings'))) return;
   const asked = canvas.requestPointerLock() as unknown;
-  if (asked instanceof Promise) asked.catch(() => (hint.textContent = `${CONTROLS} (this browser will not capture the mouse)`));
-});
+  if (asked instanceof Promise) {
+    asked.catch((err: unknown) => {
+      const name = err instanceof Error ? err.name : '';
+      if (name === 'SecurityError') hint.textContent = `${CONTROLS} (this browser will not capture the mouse)`;
+      else console.warn('pointer lock refused this time:', err);
+    });
+  }
+}
+window.addEventListener('mousedown', capture);
+window.addEventListener('click', capture);
 document.addEventListener('pointerlockchange', () => {
   hint.textContent = locked() ? `${CONTROLS} · Esc to release the mouse` : `${CONTROLS} · click to capture the mouse`;
 });

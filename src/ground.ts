@@ -19,8 +19,9 @@ export function buildGround(renderer: Renderer, size: number): Ground {
     rim: [0.12, 0.09, 0.05],
   });
   const still = translation(0, 0, 0);
-  renderer.instances.push({ mesh: new Mesh(gl, sand.tops), model: still, material: material({ roughness: 0.95, doubleSided: true }) });
-  if (sand.sides.indices.length) renderer.instances.push({ mesh: new Mesh(gl, sand.sides), model: still, material: material({ roughness: 0.9, doubleSided: true }) });
+  // The ground never fades near the camera (nearFade off): only what stands on it does.
+  renderer.instances.push({ mesh: new Mesh(gl, sand.tops), model: still, material: material({ roughness: 0.95, doubleSided: true, nearFade: false }) });
+  if (sand.sides.indices.length) renderer.instances.push({ mesh: new Mesh(gl, sand.sides), model: still, material: material({ roughness: 0.9, doubleSided: true, nearFade: false }) });
   if (sand.rims.indices.length) renderer.overlays.push({ mesh: new OverlayMesh(gl, sand.rims), model: still });
   return { size, heightAt: (x, z) => heightAt(sand.corners, size, size, x, z) };
 }

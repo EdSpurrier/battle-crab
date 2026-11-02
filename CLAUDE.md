@@ -28,9 +28,12 @@ src/ground.ts   the sand the crab walks on (engine terrain, flat for now)
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
-src/settings.ts SettingsPanel: sections of toggles / sliders / choices on live getters and setters, kept in localStorage
-src/look.ts     the Look (Tab): camera projection, field of view, depth of field (focus on the crab or by hand);
-                distance fog (pushed back by the orthographic eye's extra distance); volumetric haze; mist banks
+src/settings.ts SettingsPanel: sections of toggles / sliders (handle-less bars with an editable number) / choices /
+                colours / buttons on live getters and setters, kept in localStorage (or not: persist false)
+src/look.ts     the Look (Tab): camera projection, field of view, ground clearance, near fade, depth of field (focus
+                on the crab or by hand); distance fog (start, end, colour tint; pushed back by the orthographic
+                eye's extra distance); volumetric haze; mist banks
+src/ui.css      the HUD (black text, no shadow), crosshair and panel styles, shared by every page
 ```
 
 ## Deploying
@@ -44,6 +47,11 @@ The build runs locally, so the private engine needs no token in CI.
   crab turns, eased, to face the camera's way and moves relative to it: W/S forward and back along
   the look, A/D a sidestep across it (it does not turn to face a sidestep or a back-pedal).
 - The shell is the build site for the weapon platform; its spire curls up and to the crab's right.
+- The camera never goes under the ground: `ThirdPersonCamera.clearance` (a setting) is how high the eye
+  stays; the tilt shown is raised from the one asked for when needed. Things close to the eye fade
+  (`renderer.nearFade`, a setting); the ground's materials have `nearFade: false` so only what stands on it does.
+- Pointer lock is asked for on mousedown and again on click of the same gesture, so the first press
+  that gives the window focus is enough in a real browser (the embedded pane refuses it altogether).
 - Crab body space (`src/crab.ts`): the crab faces +z and +x is its LEFT (right-handed, +y up).
 
 ## Rules
