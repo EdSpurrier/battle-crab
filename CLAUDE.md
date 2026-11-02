@@ -21,11 +21,11 @@ npm run deploy       # build for GitHub Pages (base /battle-crab/) and push dist
 
 ## Layout
 ```
-src/main.ts     bootstrap: scene, input (mouse aims with no button held, pointer lock when allowed; WASD
-                scuttles relative to the camera, sideways as readily as forward), the frame
+src/main.ts     bootstrap: scene, input (mouse orbits with no button held, pointer lock on click; WASD walks
+                relative to the camera), the frame
 src/camera.ts   ThirdPersonCamera (the engine's CameraLike: eye / view / projection / target / distance)
 src/ground.ts   the sand the crab walks on (engine terrain, flat for now)
-src/player.ts   the player: position, facing (always the camera's yaw), velocity; drives the crab
+src/player.ts   the player: position, facing (turns toward the walk direction), velocity; drives the crab
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
 src/settings.ts SettingsPanel: sections of toggles / sliders / choices on live getters and setters, kept in localStorage
@@ -39,8 +39,9 @@ src/look.ts     the Look (Tab): camera projection, field of view, depth of field
 The build runs locally, so the private engine needs no token in CI.
 
 ## Game feel decided so far
-- Mouse is aim: the crab faces where the camera looks; there is no click-to-turn. Keys move relative
-  to the camera (W/S along the look, A/D across it); the crab does not turn to face its walk direction.
+- The mouse orbits the camera with no button held (pointer lock on any click, Esc releases). A
+  standing crab does not turn with the camera (you can look at its face). Keys move relative to the
+  camera (W/S along the look, A/D across it) and the crab turns, eased, to face the way it walks.
 - The shell is the build site for the weapon platform; its spire curls up and to the crab's right.
 - Crab body space (`src/crab.ts`): the crab faces +z and +x is its LEFT (right-handed, +y up).
 
