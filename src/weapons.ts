@@ -55,8 +55,10 @@ export interface Boost {
   rate: number;
   blast: number;
   grow: number;
+  /** Grenades: this many bomblets scatter from each burst. */
+  cluster: number;
 }
-export const plainBoost = (): Boost => ({ streams: [0], damage: 1, size: 1, rate: 1, blast: 0, grow: 1 });
+export const plainBoost = (): Boost => ({ streams: [0], damage: 1, size: 1, rate: 1, blast: 0, grow: 1, cluster: 0 });
 const NO_BOOST = plainBoost();
 
 /** The spiky ball out on its chain. */
@@ -152,6 +154,15 @@ export class Arsenal {
     });
   }
   private readonly cooldown = new Map<Mounted, number>();
+  /** The last cooldown each weapon was given, so a recharge can be shown as a share. */
+  private readonly cooldownMax = new Map<Mounted, number>();
+
+  /** How much of weapon `m`'s recharge is back, 0..1 (1: ready). */
+  readyShare(m: Mounted): number {
+    const left = this.cooldown.get(m) ?? 0;
+    const max = this.cooldownMax.get(m) ?? 1;
+    return left <= 0 ? 1 : Math.max(0, 1 - left / max);
+  }
   private readonly spinRate = new Map<Mounted, number>();
   private readonly ammo = new Map<Mounted, number>();
   private readonly knockHits = new Map<unknown, number>();
@@ -340,7 +351,7 @@ export class Arsenal {
           if (held && this.spend(w, dt)) {
             w.kick = 0.3;
             this.flaming = { at: [muzzle[0] + facing[0] * 3, muzzle[1] + facing[1] * 3 + 0.5, muzzle[2] + facing[2] * 3], ttl: 0.1 };
-            for (const o of this.world.inCone(muzzle, facing, 6.5, 0.36, this.owner)) {
+            for (const o of this.world.inCone(muzzle, facing, 6.5, 0.36, this.owner, this.structure.flatAim)) {
               if (isCombatant(o)) o.hurt(DAMAGE.flamethrower * dt * this.damageScale);
               else if (isPartRef(o)) {
                 o.structure.damage(o.index, DAMAGE.flamethrower * dt * this.damageScale);
@@ -365,6 +376,7 @@ export class Arsenal {
           if (pulled && cool <= 0 && this.spend(w, 1)) {
             const b = this.boostOf(w);
             this.cooldown.set(w, 0.75 * b.rate);
+            this.cooldownMax.set(w, 0.75 * b.rate);
             w.kick = 0.8;
             this.flash(muzzle, [1, 0.8, 0.4], 0.08, 4, 20);
             for (const dir of this.fan(facing, b.streams)) {
@@ -434,6 +446,16 @@ export class Arsenal {
         const b = g.boost;
         this.splash(g.pos, GRENADE_BLAST * Math.sqrt(b.size) + b.blast, DAMAGE.grenade * b.damage);
         if (hit && hit.owner !== undefined) this.hurtOwner(hit.owner, DAMAGE.grenade * b.damage * 0.5);
+        // A cluster: bomblets scatter from the burst, each a smaller grenade on a short fuse.
+        for (let k = 0; k < b.cluster; k++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 3 + Math.random() * 4;
+          const model = new Float32Array(16);
+          placeBall(model, g.pos, b.size * 0.6);
+          const instance: Instance = { mesh: this.grenadeMesh, model, material: this.ballMaterial };
+          this.renderer.instances.push(instance);
+          this.grenades.push({ instance, pos: [g.pos[0], g.pos[1] + 0.3, g.pos[2]], vel: [Math.cos(a) * sp, 4 + Math.random() * 3, Math.sin(a) * sp], fuse: 0.5 + Math.random() * 0.4, spin: 0, boost: { ...b, size: b.size * 0.6, damage: b.damage * 0.5, blast: b.blast * 0.5, cluster: 0 } });
+        }
         const list = this.renderer.instances;
         const k = list.indexOf(g.instance);
         if (k >= 0) list.splice(k, 1);
@@ -700,7 +722,7 @@ export class Arsenal {
 
   /** A blast round `at`: everything within `radius` takes `damage`, with a boom to match. */
   private splash(at: Vec3, radius: number, damage: number): void {
-    for (const o of this.world.near(at, radius, this.owner)) this.hurtBox(o, damage, 1);
+    for (const o of this.world.near(at, radius, this.owner, this.structure.flatAim)) this.hurtBox(o, damage, 1);
     const p = this.renderer.particles;
     p.emit(at[0], at[1] + 0.2, at[2], { count: 4, color: [3, 2.2, 1], colorTo: [2, 0.6, 0.1], speed: 0.3, life: 0.14, size: radius * 0.9, fadeCurve: 'down', sizeCurve: 'up', shape: 'disc' });
     p.emit(at[0], at[1] + 0.2, at[2], { count: Math.round(10 * radius), color: [0.5, 0.45, 0.4], colorTo: [0.25, 0.25, 0.25], speed: radius * 1.5, up: 1, life: 1 + radius * 0.2, size: 0.3 + radius * 0.12, drag: 1.5, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
@@ -733,7 +755,7 @@ export class Arsenal {
     const d: Vec3 = [facing[0] + (Math.random() - 0.5) * spread, facing[1] + (Math.random() - 0.5) * spread, facing[2] + (Math.random() - 0.5) * spread];
     const l = Math.hypot(d[0], d[1], d[2]) || 1;
     const dir: Vec3 = [d[0] / l, d[1] / l, d[2] / l];
-    const hit = this.world.raycast(muzzle, dir, GUN_RANGE, this.owner);
+    const hit = this.world.raycast(muzzle, dir, GUN_RANGE, this.owner, this.structure.flatAim);
     const flight = (hit ? hit.distance : GUN_RANGE) / TRACER_SPEED;
     if (hit) this.pending.push({ at: this.clock + flight, hit, damage, size, blast });
     this.flash(muzzle, [1, 0.85, 0.5], 0.07, 5, 35);

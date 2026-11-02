@@ -57,7 +57,8 @@ export class LifeBars {
         this.bars.set(c, bar);
       }
       const b = c.crab.body;
-      const at: Vec3 = [b[12], b[13] + 1.7, b[14]];
+      // Over the shell, however big the crab is (its scale is in the body matrix's columns).
+      const at: Vec3 = [b[12], b[13] + 1.7 * (Math.hypot(b[0], b[1], b[2]) || 1), b[14]];
       const p = transformPoint(pv, at);
       if (p[3] <= 0) {
         bar.root.hidden = true;
