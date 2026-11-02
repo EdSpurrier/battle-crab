@@ -16,6 +16,7 @@ npm run dev          # http://localhost:5182
 npm run dev:engine   # the same, but on ../gridfall-engine's source (an engine feature being built next door)
 npm run typecheck    # tsc --noEmit
 npm run build        # typecheck + vite build
+npm run deploy       # build for GitHub Pages (base /battle-crab/) and push dist/ to the gh-pages branch
 ```
 
 ## Layout
@@ -27,7 +28,15 @@ src/ground.ts   the sand the crab walks on (engine terrain, flat for now)
 src/player.ts   the player: position, facing (always the camera's yaw), velocity; drives the crab
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
+src/settings.ts SettingsPanel: sections of toggles / sliders / choices on live getters and setters, kept in localStorage
+src/look.ts     the Look (Tab): camera projection, field of view, depth of field (focus on the crab or by hand);
+                distance fog (pushed back by the orthographic eye's extra distance); volumetric haze; mist banks
 ```
+
+## Deploying
+`npm run deploy` builds with `--base=/battle-crab/` and pushes `dist/` to the `gh-pages` branch
+(the `gh-pages` package); GitHub Pages serves that branch at https://edspurrier.github.io/battle-crab/.
+The build runs locally, so the private engine needs no token in CI.
 
 ## Game feel decided so far
 - Mouse is aim: the crab faces where the camera looks; there is no click-to-turn. Keys move relative
