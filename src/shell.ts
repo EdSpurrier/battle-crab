@@ -75,12 +75,13 @@ export const PIECES: PieceType[] = [
 /** The claws: the crab's own, or metal clampers in four sizes. */
 export type ClawKind = 'own' | 'tiny' | 'medium' | 'large' | 'uber';
 export const CLAW_KINDS: ClawKind[] = ['own', 'tiny', 'medium', 'large', 'uber'];
-export const CLAWS: Record<ClawKind, { name: string; blurb: string; scale: number; damage: number; weight: number; metal: boolean }> = {
-  own: { name: 'Own claws', blurb: 'What it was born with.', scale: 1, damage: 20, weight: 0, metal: false },
-  tiny: { name: 'Tiny clampers', blurb: 'Little metal pincers: quick and light.', scale: 0.8, damage: 28, weight: 1, metal: true },
-  medium: { name: 'Clampers', blurb: 'A solid pair of metal clampers.', scale: 1.2, damage: 40, weight: 2.5, metal: true },
-  large: { name: 'Large clampers', blurb: 'Heavy clampers: a real bite.', scale: 1.55, damage: 55, weight: 4, metal: true },
-  uber: { name: 'Uber clampers', blurb: 'Absurd. Slow to carry, awful to meet.', scale: 2, damage: 80, weight: 7, metal: true },
+/** `works`: the claws can nip and take action slot 1; the tiny ones cannot, and the slot goes to a fourth weapon instead. */
+export const CLAWS: Record<ClawKind, { name: string; blurb: string; scale: number; damage: number; weight: number; metal: boolean; works: boolean }> = {
+  own: { name: 'Own claws', blurb: 'What it was born with.', scale: 1, damage: 20, weight: 0, metal: false, works: true },
+  tiny: { name: 'Tiny clampers', blurb: 'Little metal pincers for show: no bite at all, but they free a fourth slot for a weapon.', scale: 0.6, damage: 0, weight: 0.5, metal: true, works: false },
+  medium: { name: 'Clampers', blurb: 'A solid pair of metal clampers.', scale: 1.2, damage: 40, weight: 2.5, metal: true, works: true },
+  large: { name: 'Large clampers', blurb: 'Heavy clampers: a real bite.', scale: 1.55, damage: 55, weight: 4, metal: true, works: true },
+  uber: { name: 'Uber clampers', blurb: 'Absurd. Slow to carry, awful to meet.', scale: 2, damage: 80, weight: 7, metal: true, works: true },
 };
 
 export interface Piece {
@@ -100,8 +101,12 @@ export interface ShellBuild {
   claws: ClawKind;
 }
 
-/** Weapons mounted at once: action slots 2 to 5 (slot 1 is the claws). */
-export const MAX_WEAPONS = 4;
+/** Action slots: the claws (when they work) and the weapons on the shell, four in all. */
+export const MAX_ACTIONS = 4;
+/** Weapons mounted at once: three beside working claws; four when the claws are the tiny ones that cannot bite. */
+export function maxWeapons(claws: ClawKind): number {
+  return CLAWS[claws].works ? MAX_ACTIONS - 1 : MAX_ACTIONS;
+}
 /** A deck cell's size (world units). */
 export const CELL = 0.3;
 /** How many cells past the deck's edge a build may reach, on arms. */
@@ -217,7 +222,7 @@ export function canPlace(shell: ShellType, pieces: Piece[], c: [number, number, 
 
 /** The weapons on the deck in the order they were placed, as many as there are slots for. */
 export function weaponsOf(build: ShellBuild): Piece[] {
-  return build.pieces.filter((p) => pieceType(p.kind).weapon).slice(0, MAX_WEAPONS);
+  return build.pieces.filter((p) => pieceType(p.kind).weapon).slice(0, maxWeapons(build.claws));
 }
 
 /** A first shell: a whelk with a couple of planks and a cannon. */

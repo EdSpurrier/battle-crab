@@ -142,6 +142,13 @@ export class Controls {
     return { dir, faceYaw, faceAlways: !!this.aim, run, jump };
   }
 
+  /** Top down, from a gamepad: aim at this ground point instead of the mouse's (the marker moves there). */
+  setAim(aim: Vec3 | null): void {
+    if (!this.topDown) return;
+    this.aim = aim;
+    this.drawMarker();
+  }
+
   /** The aim marker: a ring with four ticks, on the ground under the mouse. */
   private drawMarker(): void {
     const a = this.aim;

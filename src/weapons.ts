@@ -94,10 +94,10 @@ const GRAVITY = 20;
 const FIREWORK_COLORS: [Vec3, Vec3][] = [[[1, 0.3, 0.3], [1, 0.8, 0.2]], [[0.3, 0.6, 1], [0.8, 0.4, 1]], [[0.3, 1, 0.4], [1, 1, 0.5]], [[1, 0.5, 0.9], [0.5, 0.9, 1]], [[1, 0.85, 0.3], [1, 0.4, 0.1]]];
 
 export class Arsenal {
-  /** The chosen weapon, an index into the structure's weapons (-1: none, the claws). */
+  /** The chosen weapon, an index into the structure's weapons (-1: none, the claws): what the mouse button fires. */
   selected = -1;
-  private held = false;
-  private pulled = false;
+  /** Each weapon's own trigger (a gamepad fires several at once): held now, and pulled since the last frame. */
+  private readonly triggers = new Map<Mounted, { held: boolean; pulled: boolean }>();
   private readonly cooldown = new Map<Mounted, number>();
   private readonly spinRate = new Map<Mounted, number>();
   private readonly ammo = new Map<Mounted, number>();
@@ -171,10 +171,33 @@ export class Arsenal {
     for (const m of this.structure.weapons) this.ammo.set(m, AMMO[m.piece.kind]);
   }
 
-  /** The trigger: down on press, up on release. */
+  /** The chosen weapon's trigger: down on press, up on release. */
   trigger(down: boolean): void {
-    if (down && !this.held) this.pulled = true;
-    this.held = down;
+    const w = this.weapon;
+    if (w) this.fire(w, down);
+  }
+
+  /** Weapon `m`'s own trigger (held: it fires as long as it is down; a pull is the press). */
+  fire(m: Mounted, down: boolean): void {
+    let s = this.triggers.get(m);
+    if (!s) {
+      s = { held: false, pulled: false };
+      this.triggers.set(m, s);
+    }
+    if (down && !s.held) s.pulled = true;
+    s.held = down;
+  }
+
+  /** Every trigger up (the window lost focus, the crab cracked). */
+  releaseAll(): void {
+    for (const s of this.triggers.values()) {
+      s.held = false;
+      s.pulled = false;
+    }
+  }
+
+  private heldOf(m: Mounted): boolean {
+    return this.triggers.get(m)?.held ?? false;
   }
 
   /** Spend `n` of weapon `w`'s ammunition if it has it. */
@@ -188,15 +211,12 @@ export class Arsenal {
 
   /**
    * A frame: turn the turrets toward `aimAt` (the crosshair's point in the world, the ground
-   * marker), fire what the trigger asks of the chosen weapon straight out of its barrel, swing the
+   * marker), fire what each weapon's trigger asks of it straight out of its barrel, swing the
    * knockers, fly the balls, chains and rockets, ease the kicks.
    */
   update(dt: number, body: Mat4, aimAt: Vec3 | null = null): void {
     this.clock += dt;
     this.structure.aim(body, aimAt, dt);
-    const w = this.weapon;
-    const pulled = this.pulled;
-    this.pulled = false;
     for (let i = this.pending.length - 1; i >= 0; i--) {
       if (this.pending[i].at <= this.clock) {
         this.land(this.pending[i].hit, 1, this.pending[i].damage);
@@ -211,14 +231,18 @@ export class Arsenal {
       this.cooldown.set(m, Math.max(0, (this.cooldown.get(m) ?? 0) - dt));
       if (m.piece.kind === 'gatling') {
         const rate = this.spinRate.get(m) ?? 0;
-        const want = m === w && this.held && this.ammoOf(m) > 0 ? 1 : 0;
+        const want = this.heldOf(m) && this.ammoOf(m) > 0 ? 1 : 0;
         const next = rate + (want - rate) * (1 - Math.exp(-(want ? 2.2 : 1.4) * dt));
         this.spinRate.set(m, next);
         m.spin += dt * next * 40;
       }
-      if (m.piece.kind === 'knocker') this.swingKnocker(m, dt, m === w && this.held);
+      if (m.piece.kind === 'knocker') this.swingKnocker(m, dt, this.heldOf(m));
     }
-    if (w) {
+    for (const w of this.structure.weapons) {
+      const s = this.triggers.get(w);
+      const held = s?.held ?? false;
+      const pulled = s?.pulled ?? false;
+      if (s) s.pulled = false;
       const muzzle = w.muzzle;
       const facing = w.direction;
       const cool = this.cooldown.get(w) ?? 0;
@@ -235,7 +259,7 @@ export class Arsenal {
           break;
         case 'gatling': {
           const rate = this.spinRate.get(w) ?? 0;
-          if (this.held && rate > 0.55 && cool <= 0 && this.spend(w, 1)) {
+          if (held && rate > 0.55 && cool <= 0 && this.spend(w, 1)) {
             this.cooldown.set(w, 1 / (8 + rate * 22));
             w.kick = 0.6;
             this.tracer(muzzle, facing, 0.03, DAMAGE.gatling);
@@ -243,14 +267,14 @@ export class Arsenal {
           break;
         }
         case 'machinegun':
-          if (this.held && cool <= 0 && this.spend(w, 1)) {
+          if (held && cool <= 0 && this.spend(w, 1)) {
             this.cooldown.set(w, 0.11);
             w.kick = 0.3;
             this.tracer(muzzle, facing, 0.04, DAMAGE.machinegun);
           }
           break;
         case 'flamethrower':
-          if (this.held && this.spend(w, dt)) {
+          if (held && this.spend(w, dt)) {
             w.kick = 0.3;
             this.flaming = { at: [muzzle[0] + facing[0] * 3, muzzle[1] + facing[1] * 3 + 0.5, muzzle[2] + facing[2] * 3], ttl: 0.1 };
             for (const o of this.world.inCone(muzzle, facing, 6.5, 0.36, this.owner)) {
@@ -291,8 +315,7 @@ export class Arsenal {
           break;
       }
     }
-    // Chains of weapons not chosen still fly, land and hang; rockets and balls carry on.
-    for (const [m] of this.tethers) if (m !== w) this.spikeball(m, false, dt, m.muzzle, m.direction);
+    // Rockets and balls carry on.
     this.flyRockets(dt);
     this.flyBalls(dt);
   }

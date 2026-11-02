@@ -3,6 +3,7 @@ import { ThirdPersonCamera } from './camera';
 import { crabBox } from './combat';
 import { Controls } from './controls';
 import { Enemy } from './enemy';
+import { GamepadInput } from './gamepad';
 import { buildGround } from './ground';
 import { World, wreckFx } from './impacts';
 import { LifeBars } from './lifebars';
@@ -12,8 +13,8 @@ import { MistSet } from './mist';
 import { Pickups } from './pickups';
 import { Player } from './player';
 import { Props } from './props';
-import { CLAWS, loadBuild, shellType } from './shell';
-import { Structure } from './structure';
+import { CLAWS, MAX_ACTIONS, loadBuild, shellType } from './shell';
+import { Structure, type Mounted } from './structure';
 import { Arsenal } from './weapons';
 
 /**
@@ -99,6 +100,8 @@ renderer.timeOfDay = 0.3;
 // ---------- input
 
 const LOOK_SPEED = 0.0022;
+/** How fast the right stick orbits the camera in 3rd person (radians a second at full tilt). */
+const PAD_LOOK = 2.6;
 const controls = new Controls(renderer, camera, canvas, ground, LOOK_SPEED);
 const look = installLook(document.body, renderer, camera, mist, controls);
 // Opening the panel gives the cursor back (so it can be used); the game plays on underneath.
@@ -106,37 +109,88 @@ look.panel.onToggle = (open) => {
   if (open && locked()) document.exitPointerLock();
 };
 
-// ---------- actions: 1 the claws, 2 to 5 the weapons on the shell, in the order they were built
+// ---------- actions: four slots. The claws take the first when they can bite, then the weapons on the
+// shell in the order they were built (with the tiny clampers, four weapons). Keys 1-4 (or the mouse's
+// chosen one) fire one at a time; a gamepad's LB / RB / LT / RT each fire a slot outright.
 
+const gamepad = new GamepadInput();
+type Action = { kind: 'claws' } | { kind: 'weapon'; m: Mounted };
+const clawsWork = CLAWS[build.claws].works;
+function actions(): Action[] {
+  return [...(clawsWork ? [{ kind: 'claws' } as Action] : []), ...structure.weapons.map((m): Action => ({ kind: 'weapon', m }))].slice(0, MAX_ACTIONS);
+}
+const PAD_LABELS = ['LB', 'RB', 'LT', 'RT'];
 let action = 0;
 function showActions(): void {
-  const slots = [CLAWS[build.claws].name, ...structure.weapons.map((w) => Arsenal.nameOf(w))];
+  const list = actions();
   actionBar.replaceChildren(
-    ...slots.map((n, i) => {
+    ...list.map((a, i) => {
       const el = document.createElement('span');
       el.className = `action${i === action ? ' on' : ''}`;
-      const ammo = i > 0 ? arsenal.ammoOf(structure.weapons[i - 1]) : Infinity;
+      const ammo = a.kind === 'weapon' ? arsenal.ammoOf(a.m) : Infinity;
       const left = ammo === Infinity ? '' : ` <i>${Math.ceil(ammo)}</i>`;
-      el.innerHTML = `<b>${i + 1}</b> ${n}${left}`;
+      const name = a.kind === 'weapon' ? Arsenal.nameOf(a.m) : CLAWS[build.claws].name;
+      el.innerHTML = `<b>${gamepad.connected ? PAD_LABELS[i] : i + 1}</b> ${name}${left}`;
       if (ammo === 0) el.classList.add('empty');
       return el;
     }),
   );
 }
 function setAction(i: number): void {
-  if (i < 0 || i > structure.weapons.length) return;
-  action = i;
-  arsenal.selected = i - 1;
+  if (i < 0 || i >= actions().length) return;
   arsenal.trigger(false);
+  action = i;
+  const a = actions()[i];
+  arsenal.selected = a.kind === 'weapon' ? structure.weapons.indexOf(a.m) : -1;
   showActions();
 }
 setAction(0);
 structure.onChange = () => {
   weigh();
-  if (action > structure.weapons.length) setAction(0);
-  else showActions();
+  if (action >= actions().length) setAction(0);
+  else setAction(action);
   say('A piece came off!');
 };
+
+/** A nip: the claws reach a little way in front, and whoever (or whatever piece) is there takes it, by the claws worn. */
+function nip(): void {
+  player.crab.snapNext();
+  const b = player.crab.body;
+  const reach = 2.4 * Math.sqrt(CLAWS[build.claws].scale);
+  for (const o of world.inCone([b[12], b[13], b[14]], [b[8], 0, b[10]], reach, 0.7, player)) {
+    if (o instanceof Enemy) o.hurt(CLAWS[build.claws].damage);
+    else if (o && typeof o === 'object' && 'structure' in o && 'index' in o) (o as { structure: Structure; index: number }).structure.damage((o as { index: number }).index, CLAWS[build.claws].damage);
+  }
+}
+
+/** Fire action slot `i` (a gamepad button): a weapon's trigger, or a nip every so often while held. */
+let nipCool = 0;
+function fireAction(i: number, down: boolean): void {
+  const a = actions()[i];
+  if (!a) return;
+  if (a.kind === 'weapon') arsenal.fire(a.m, down);
+  else if (down && nipCool <= 0) {
+    nip();
+    nipCool = 0.4;
+  }
+}
+
+// ---------- the gamepad: polled each frame (see gamepad.ts for the mapping)
+
+/** When the pad last faced the crab somewhere, and the ground point it faced (kept until the mouse moves again). */
+let padAimedAt = -1;
+let padAim: Vec3 | null = null;
+let mouseMovedAt = 0;
+window.addEventListener('gamepadconnected', (e) => {
+  say(`Gamepad: ${e.gamepad.id.split('(')[0].trim() || 'connected'}`);
+  showHint();
+  showActions();
+});
+window.addEventListener('gamepaddisconnected', () => {
+  gamepad.connected = false;
+  showHint();
+  showActions();
+});
 
 const keys = new Set<string>();
 const overPanel = (e: Event) => e.target instanceof Element && !!e.target.closest('.settings');
@@ -153,7 +207,7 @@ window.addEventListener('keydown', (e) => {
     look.panel.refresh();
     return;
   }
-  if (/^Digit[1-5]$/.test(e.code)) {
+  if (/^Digit[1-4]$/.test(e.code)) {
     setAction(Number(e.code.slice(5)) - 1);
     return;
   }
@@ -163,7 +217,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => {
   keys.clear();
-  arsenal.trigger(false);
+  arsenal.releaseAll();
   camera.aimZoom = 0;
 });
 
@@ -172,11 +226,13 @@ window.addEventListener('blur', () => {
 // on the click of the same gesture, so the press that gives the window focus is enough. Where locking
 // is refused (some embedded browsers) the bare mouse movement still orbits. Topdown keeps the cursor.
 const locked = () => document.pointerLockElement === canvas;
-const THIRD = 'mouse to look · 1-5 pick an action, left button fires, right button aims · WASD to walk · Shift to run · Space to jump · Tab for settings · C for topdown';
-const TOP = 'mouse to aim · 1-5 pick an action, left button fires, right button zooms · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person';
+const THIRD = 'mouse to look · 1-4 pick an action, left button fires, right button aims · WASD to walk · Shift to run · Space to jump · Tab for settings · C for topdown';
+const TOP = 'mouse to aim · 1-4 pick an action, left button fires, right button zooms · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person';
+const PAD = 'gamepad: left stick moves, right stick faces, LB / RB / LT / RT fire the slots, press the left stick to run, A jumps';
 function showHint(): void {
   if (controls.topDown) hint.textContent = TOP;
   else hint.textContent = `${THIRD} · ${locked() ? 'Esc to release the mouse' : 'click to capture the mouse'}`;
+  if (gamepad.connected) hint.textContent += ` · ${PAD}`;
 }
 controls.onModeChange = (mode) => {
   crosshair.hidden = mode === 'topdown';
@@ -202,16 +258,8 @@ window.addEventListener('click', capture);
 window.addEventListener('mousedown', (e) => {
   if (overPanel(e) || (e.target instanceof Element && e.target.closest('a')) || !player.alive) return;
   if (e.button === 0) {
-    if (action === 0) {
-      player.crab.snapNext();
-      // A nip reaches a little way in front: whoever (or whatever piece) is there takes it, by the claws worn.
-      const b = player.crab.body;
-      const reach = 2.4 * Math.sqrt(CLAWS[build.claws].scale);
-      for (const o of world.inCone([b[12], b[13], b[14]], [b[8], 0, b[10]], reach, 0.7, player)) {
-        if (o instanceof Enemy) o.hurt(CLAWS[build.claws].damage);
-        else if (o && typeof o === 'object' && 'structure' in o && 'index' in o) (o as { structure: Structure; index: number }).structure.damage((o as { index: number }).index, CLAWS[build.claws].damage);
-      }
-    } else arsenal.trigger(true);
+    if (actions()[action]?.kind === 'claws') nip();
+    else arsenal.trigger(true);
   }
   if (e.button === 2) camera.aimZoom = 1;
 });
@@ -223,7 +271,10 @@ window.addEventListener('contextmenu', (e) => {
   if (!overPanel(e)) e.preventDefault();
 });
 document.addEventListener('pointerlockchange', showHint);
-window.addEventListener('mousemove', (e) => controls.mouseMoved(e, overPanel(e), locked()));
+window.addEventListener('mousemove', (e) => {
+  if (e.movementX || e.movementY) mouseMovedAt = performance.now();
+  controls.mouseMoved(e, overPanel(e), locked());
+});
 canvas.addEventListener('wheel', (e) => {
   camera.zoom(e.deltaY > 0 ? 1.1 : 0.9);
   e.preventDefault();
@@ -241,11 +292,40 @@ function frame(now: number): void {
   const live = enemies.filter((e) => e.alive);
   world.moving = [crabBox(player), ...structure.boxes(player.crab.body, player), ...live.map(crabBox), ...live.flatMap((e) => e.structure.boxes(e.crab.body, e))];
   const intent = controls.update(keys, player.position);
+  nipCool = Math.max(0, nipCool - dt);
+  // A gamepad joins in over the keys and the mouse: the left stick walks (in the camera's frame), the right
+  // stick faces (top down: the aim marker goes a little way out that way and stays until the mouse moves;
+  // 3rd person: it orbits the camera), the left stick pressed in runs, A jumps, LB / RB / LT / RT fire the slots.
+  const pad = gamepad.poll();
+  if (pad && player.alive) {
+    const fw = camera.forward();
+    const rt = camera.right();
+    if (pad.move[0] || pad.move[1]) intent.dir = [fw[0] * -pad.move[1] + rt[0] * pad.move[0], 0, fw[2] * -pad.move[1] + rt[2] * pad.move[0]];
+    if (pad.look[0] || pad.look[1]) {
+      if (controls.topDown) {
+        const dx = fw[0] * -pad.look[1] + rt[0] * pad.look[0];
+        const dz = fw[2] * -pad.look[1] + rt[2] * pad.look[0];
+        const l = Math.hypot(dx, dz) || 1;
+        const p = player.position;
+        padAim = [p[0] + (dx / l) * 7, 0, p[2] + (dz / l) * 7];
+        padAim[1] = ground.heightAt(padAim[0], padAim[2]);
+        padAimedAt = performance.now();
+      } else camera.rotate(-pad.look[0] * PAD_LOOK * dt, pad.look[1] * PAD_LOOK * dt);
+    }
+    if (controls.topDown && padAim && padAimedAt > mouseMovedAt) {
+      controls.setAim(padAim);
+      intent.faceYaw = Math.atan2(padAim[0] - player.position[0], padAim[2] - player.position[2]);
+      intent.faceAlways = true;
+    }
+    intent.run = intent.run || pad.run;
+    intent.jump = intent.jump || pad.jump;
+    for (let i = 0; i < 4; i++) fireAction(i, pad.fire[i]);
+  }
   if (player.alive) player.update(dt, intent.dir, intent.faceYaw, intent.faceAlways, intent.run, intent.jump);
   else {
     // Cracked: the crab keels over, a burst of shell as it settles, a few seconds down, then back at the start, whole.
     if (deadFor === 0) {
-      arsenal.trigger(false);
+      arsenal.releaseAll();
       cracked.hidden = false;
     }
     player.update(dt, [0, 0, 0], player.yaw, false);
@@ -331,4 +411,4 @@ function frame(now: number): void {
 }
 requestAnimationFrame(frame);
 // A handle on the game for the browser console (poking at the player, the enemies, the lights).
-(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer };
+(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera };
