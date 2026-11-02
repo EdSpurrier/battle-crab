@@ -127,7 +127,8 @@ export class Arsenal {
         case 'machinegun':
           if (this.held && cool <= 0) {
             this.cooldown.set(w, 0.11);
-            w.kick = 1;
+            // The whole gun rocks on its pintle, so a small kick.
+            w.kick = 0.3;
             this.tracer(muzzle, facing, 0.04);
           }
           break;
