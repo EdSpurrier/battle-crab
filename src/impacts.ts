@@ -7,7 +7,7 @@ import type { Renderer, Vec3 } from 'gridfall-engine';
  * and a dust ring on the beach, sparks and stone chips on rock.
  */
 
-export type Surface = 'sand' | 'rock' | 'shell';
+export type Surface = 'sand' | 'rock' | 'shell' | 'wood';
 
 export interface Obstacle {
   center: Vec3;
@@ -16,8 +16,10 @@ export interface Obstacle {
   /** Turn about +y, radians. */
   yaw: number;
   surface: Surface;
-  /** Who this is (a crab): a shooter's own box is skipped, and a hit on it hurts them. */
+  /** Who this is (a crab, or a piece of one's structure): a hit on it hurts them. */
   owner?: unknown;
+  /** Whose it is when `owner` is a piece: a shooter's own pieces are skipped like their own body. */
+  self?: unknown;
 }
 
 export interface Hit {
@@ -41,7 +43,7 @@ export class World {
     let best: Hit | null = this.groundHit(from, dir, maxDistance);
     for (const list of [this.obstacles, this.moving]) {
       for (const o of list) {
-        if (ignore !== undefined && o.owner === ignore) continue;
+        if (ignore !== undefined && (o.owner === ignore || o.self === ignore)) continue;
         const h = this.boxHit(o, from, dir, best ? best.distance : maxDistance);
         if (h) best = h;
       }
@@ -62,7 +64,7 @@ export class World {
     const out: unknown[] = [];
     const cosA = Math.cos(halfAngle);
     for (const o of this.moving) {
-      if (o.owner === undefined || o.owner === ignore) continue;
+      if (o.owner === undefined || o.owner === ignore || o.self === ignore) continue;
       const d: Vec3 = [o.center[0] - from[0], o.center[1] - from[1], o.center[2] - from[2]];
       const l = Math.hypot(d[0], d[1], d[2]);
       const reach = Math.max(o.half[0], o.half[2]);
@@ -72,6 +74,17 @@ export class World {
         continue;
       }
       if ((d[0] * dir[0] + d[1] * dir[1] + d[2] * dir[2]) / l >= cosA - reach / Math.max(l, 1e-3)) out.push(o.owner);
+    }
+    return out;
+  }
+
+  /** The moving boxes (and their owners) within `range` of a point, not `ignore`'s: a swing's reach, a burst. */
+  near(at: Vec3, range: number, ignore?: unknown): Obstacle[] {
+    const out: Obstacle[] = [];
+    for (const o of this.moving) {
+      if (o.owner === undefined || o.owner === ignore || o.self === ignore) continue;
+      const d = Math.hypot(o.center[0] - at[0], o.center[1] - at[1], o.center[2] - at[2]);
+      if (d - Math.max(o.half[0], o.half[1], o.half[2]) <= range) out.push(o);
     }
     return out;
   }
@@ -179,6 +192,11 @@ export function impactFx(renderer: Renderer, hit: Hit, size: number): void {
     p.emit(px, py, pz, { count: Math.round(8 * size), color: [0.62, 0.52, 0.36], colorTo: [0.5, 0.42, 0.3], speed: 4 + 1.5 * size, dir: n, cone: 0.6, life: 0.7 + 0.2 * size, size: 0.05 + 0.01 * size, gravity: 14, shape: 'disc' });
     p.emit(px, py + 0.03, pz, { count: Math.round(10 * size), color: [0.78, 0.7, 0.5], colorTo: [0.72, 0.64, 0.47], speed: 2.5 + 1.2 * size, up: 0.1, life: 0.6 + 0.1 * size, size: 0.2 + 0.05 * size, drag: 2.5, alpha: 0.75, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
     if (big) p.emit(px, py + 0.2, pz, { count: 24, color: [0.7, 0.64, 0.5], colorTo: [0.55, 0.5, 0.42], speed: 1.2, up: 3.5, life: 2.2, size: 0.55, gravity: -0.4, drag: 0.9, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+  } else if (hit.surface === 'wood') {
+    // Wood: splinters flung along the normal, a few shavings, a puff of dust.
+    p.emit(px, py, pz, { count: Math.round(10 * size), color: [0.6, 0.42, 0.2], colorTo: [0.4, 0.26, 0.1], speed: 3.5 + 1.5 * size, dir: n, cone: 0.7, life: 0.9, size: 0.05 + 0.015 * size, gravity: 11, stretch: 3, shape: 'spark' });
+    p.emit(px, py, pz, { count: Math.round(5 * size), color: [0.75, 0.6, 0.4], colorTo: [0.55, 0.4, 0.22], speed: 2 + size, dir: n, cone: 0.9, life: 1.1, size: 0.07, gravity: 8, shape: 'disc' });
+    p.emit(px, py, pz, { count: Math.round(3 * size), color: [0.55, 0.45, 0.32], colorTo: [0.35, 0.3, 0.22], speed: 0.8, dir: n, cone: 1, up: 0.4, life: 0.8 + 0.2 * size, size: 0.16 + 0.06 * size, drag: 1.2, alpha: 0.5, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
   } else if (hit.surface === 'shell') {
     // A crab: a flash, bits of shell flung off along the normal, a few sparks off the metal, a puff.
     p.emit(px, py, pz, { count: big ? 6 : 2, color: [1, 0.9, 0.7], colorTo: [1, 0.5, 0.2], speed: 0.5, life: big ? 0.1 : 0.07, size: big ? 0.6 : 0.26, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
