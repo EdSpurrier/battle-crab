@@ -6,15 +6,15 @@ import { pickGround } from './pick';
 
 /**
  * Two ways to play, switched with a toggle (the settings, or C):
- * - third person: the camera orbits behind the crab with the mouse (pointer lock), W/S along the
+ * - 3rd person: the camera orbits behind the crab with the mouse (pointer lock), W/S along the
  *   look, A/D across it, the crab facing the camera's way while it moves;
- * - top down: an orthographic view from 45 degrees above, following the crab (an RTS framing;
+ * - topdown: an orthographic view from 45 degrees above, following the crab (an RTS framing;
  *   Q/E turn it by eighths, the wheel zooms); WASD moves relative to the view; the mouse moves an
  *   aim marker over the ground and the crab always faces it.
  * The third-person camera's settings are kept while in top down and put back on return.
  */
-export type ControlMode = 'third person' | 'top down';
-export const CONTROL_MODES: ControlMode[] = ['third person', 'top down'];
+export type ControlMode = '3rd person' | 'topdown';
+export const CONTROL_MODES: ControlMode[] = ['3rd person', 'topdown'];
 
 interface CameraSnapshot {
   ortho: boolean;
@@ -38,10 +38,12 @@ export interface Intent {
   dir: Vec3;
   faceYaw: number;
   faceAlways: boolean;
+  /** Shift held: run. */
+  run: boolean;
 }
 
 export class Controls {
-  mode: ControlMode = 'third person';
+  mode: ControlMode = '3rd person';
   /** Top down: the ground point under the mouse (null: none yet, or the sky). */
   aim: Vec3 | null = null;
   /** The camera's tilt and zoom in top down (settings). */
@@ -59,13 +61,13 @@ export class Controls {
   }
 
   get topDown(): boolean {
-    return this.mode === 'top down';
+    return this.mode === 'topdown';
   }
 
   setMode(mode: ControlMode): void {
     if (mode === this.mode) return;
     const c = this.camera;
-    if (mode === 'top down') {
+    if (mode === 'topdown') {
       this.saved = snapshot(c);
       c.ortho = true;
       c.minPitch = (20 * Math.PI) / 180;
@@ -88,7 +90,7 @@ export class Controls {
   }
 
   toggle(): void {
-    this.setMode(this.topDown ? 'third person' : 'top down');
+    this.setMode(this.topDown ? '3rd person' : 'topdown');
   }
 
   /** The mouse moved: third person orbits by the movement; top down remembers where the cursor is. */
@@ -124,11 +126,12 @@ export class Controls {
     const fw = this.camera.forward();
     const rt = this.camera.right();
     const dir: Vec3 = [fw[0] * f + rt[0] * r, 0, fw[2] * f + rt[2] * r];
-    if (!this.topDown) return { dir, faceYaw: this.camera.yaw, faceAlways: false };
+    const run = keys.has('ShiftLeft') || keys.has('ShiftRight');
+    if (!this.topDown) return { dir, faceYaw: this.camera.yaw, faceAlways: false, run };
     this.aim = this.mouse ? pickGround(this.camera, this.canvas, this.mouse[0], this.mouse[1], (x, z) => this.ground.heightAt(x, z), this.ground.size) : null;
     this.drawMarker();
     const faceYaw = this.aim ? Math.atan2(this.aim[0] - crab[0], this.aim[2] - crab[2]) : this.camera.yaw;
-    return { dir, faceYaw, faceAlways: !!this.aim };
+    return { dir, faceYaw, faceAlways: !!this.aim, run };
   }
 
   /** The aim marker: a ring with four ticks, on the ground under the mouse. */

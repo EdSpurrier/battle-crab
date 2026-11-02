@@ -110,7 +110,13 @@ export class ThirdPersonCamera implements CameraLike {
     this.distance = Math.min(this.maxDistance, Math.max(this.minDistance, this.distance * factor));
   }
 
-  /** Ease the look-at point toward the crab, then keep the eye above the ground. */
+  /**
+   * Ease the look-at point toward the crab, then keep the eye above the ground. The eye checked is
+   * the virtual one at the zoom distance (where a perspective camera stands), whichever the
+   * projection: the orthographic eye is far back and its height means nothing. Orthographic, the
+   * view ray behind that point is checked too (further and further back along the same line), so
+   * the parallel rays into the frame do not pass through a rise behind the camera.
+   */
   update(dt: number): void {
     const k = 1 - Math.exp(-this.stiffness * dt);
     this.target[0] += (this.follow[0] - this.target[0]) * k;
@@ -118,13 +124,17 @@ export class ThirdPersonCamera implements CameraLike {
     this.target[2] += (this.follow[2] - this.target[2]) * k;
     this.tilt = this.pitch;
     if (!this.groundHeight) return;
-    // The eye's footprint moves as the tilt changes; two rounds settle it on flat and gentle ground.
-    for (let i = 0; i < 2; i++) {
-      const eye = this.eyeAt(this.distance);
-      const floor = this.groundHeight(eye[0], eye[2]) + this.clearance;
-      if (eye[1] >= floor) break;
-      const s = Math.min(1, Math.max(-1, (floor - this.pivot()[1]) / this.distance));
-      this.tilt = Math.max(this.tilt, Math.asin(s));
+    const pivotY = this.pivot()[1];
+    // The eye's footprint moves as the tilt changes; a few rounds settle it on flat and gentle ground.
+    for (let i = 0; i < 3; i++) {
+      let need = -Infinity;
+      for (const d of this.ortho ? [this.distance, this.distance + 2, this.distance + 4, this.distance + 8, this.distance + 16, this.distance + 32, this.distance + 64] : [this.distance]) {
+        const p = this.eyeAt(d);
+        const floor = this.groundHeight(p[0], p[2]) + this.clearance;
+        if (p[1] < floor) need = Math.max(need, (floor - pivotY) / d);
+      }
+      if (need === -Infinity) break;
+      this.tilt = Math.max(this.tilt, Math.asin(Math.min(1, Math.max(-1, need))));
     }
   }
 }
