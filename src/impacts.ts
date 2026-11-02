@@ -44,15 +44,26 @@ export class World {
   }
 
   /** The first thing a ray meets within `maxDistance` (never `ignore`'s own box), or null. */
-  raycast(from: Vec3, dir: Vec3, maxDistance: number, ignore?: unknown): Hit | null {
-    let best: Hit | null = this.groundHit(from, dir, maxDistance);
+  /**
+   * The first thing along a ray, or null. `flat` (Bullet Hell's level guns): the line of fire counts in
+   * plan only for the crabs and their pieces, so one is hit whatever height it stands at (each box a column, the
+   * ray tested at its own height); rocks are as tall as they are; the sand stops nothing, and only with nothing
+   * in the way does the ray end on the sand.
+   */
+  raycast(from: Vec3, dir: Vec3, maxDistance: number, ignore?: unknown, flat = false): Hit | null {
+    let best: Hit | null = flat ? null : this.groundHit(from, dir, maxDistance);
+    const level: Vec3 = flat ? normalizeFlat(dir) : dir;
     for (const list of [this.obstacles, this.moving]) {
+      // Only the crabs and their pieces count in plan; a rock is as tall as it is (a pebble does not stop a level shot).
+      const columns = flat && list === this.moving;
       for (const o of list) {
         if (ignore !== undefined && (o.owner === ignore || o.self === ignore)) continue;
-        const h = this.boxHit(o, from, dir, best ? best.distance : maxDistance);
+        const start: Vec3 = columns ? [from[0], o.center[1], from[2]] : from;
+        const h = this.boxHit(o, start, columns ? level : dir, best ? best.distance : maxDistance);
         if (h) best = h;
       }
     }
+    if (!best && flat) best = this.groundHit(from, dir, maxDistance);
     return best;
   }
 
@@ -65,12 +76,13 @@ export class World {
   }
 
   /** The owners of the moving boxes within `range` of `from` and within `halfAngle` of `dir` (a flame's tongue, a swing's reach), not `ignore`. */
-  inCone(from: Vec3, dir: Vec3, range: number, halfAngle: number, ignore?: unknown): unknown[] {
+  inCone(from: Vec3, dir: Vec3, range: number, halfAngle: number, ignore?: unknown, flat = false): unknown[] {
     const out: unknown[] = [];
     const cosA = Math.cos(halfAngle);
     for (const o of this.moving) {
       if (o.owner === undefined || o.owner === ignore || o.self === ignore) continue;
-      const d: Vec3 = [o.center[0] - from[0], o.center[1] - from[1], o.center[2] - from[2]];
+      // Flat: height does not count (a level tongue of flame reaches up and down a dune).
+      const d: Vec3 = [o.center[0] - from[0], flat ? 0 : o.center[1] - from[1], o.center[2] - from[2]];
       const l = Math.hypot(d[0], d[1], d[2]);
       const reach = Math.max(o.half[0], o.half[2]);
       if (l - reach > range) continue;
@@ -84,11 +96,12 @@ export class World {
   }
 
   /** The moving boxes (and their owners) within `range` of a point, not `ignore`'s: a swing's reach, a burst. */
-  near(at: Vec3, range: number, ignore?: unknown): Obstacle[] {
+  near(at: Vec3, range: number, ignore?: unknown, flat = false): Obstacle[] {
     const out: Obstacle[] = [];
     for (const o of this.moving) {
       if (o.owner === undefined || o.owner === ignore || o.self === ignore) continue;
-      const d = Math.hypot(o.center[0] - at[0], o.center[1] - at[1], o.center[2] - at[2]);
+      // Flat: a burst counts mostly in plan; a level above or below is only a little further off.
+      const d = Math.hypot(o.center[0] - at[0], (o.center[1] - at[1]) * (flat ? 0.3 : 1), o.center[2] - at[2]);
       if (d - Math.max(o.half[0], o.half[1], o.half[2]) <= range) out.push(o);
     }
     return out;
@@ -218,6 +231,12 @@ export function shatter(renderer: Renderer, at: Vec3, stuff: Stuff, size: number
     p.emit(x, y, z, { count: Math.round(n * 0.5), color: [0.42, 0.41, 0.4], colorTo: [0.3, 0.3, 0.29], speed: 2.5 + size, dir: d, cone, up, life: 1.6, size: 0.14 + 0.05 * size, gravity: 14, drag: 0.5, shape: 'disc' });
     p.emit(x, y, z, { count: n, color: [0.6, 0.58, 0.55], colorTo: [0.42, 0.41, 0.4], speed: 1.5 + size, dir: d, cone, up: up + 0.3, life: 1.6 + 0.4 * size, size: 0.28 + 0.1 * size, drag: 1.4, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
   }
+}
+
+/** `dir` flattened to the ground plane (unit length; straight down or up becomes +z). */
+function normalizeFlat(dir: Vec3): Vec3 {
+  const l = Math.hypot(dir[0], dir[2]);
+  return l < 1e-6 ? [0, 0, 1] : [dir[0] / l, 0, dir[2] / l];
 }
 
 export function impactFx(renderer: Renderer, hit: Hit, size: number): void {

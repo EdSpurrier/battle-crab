@@ -91,7 +91,8 @@ src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a 
                 bite (CLAWS[k].works), weapons the rest in placement order; the tiny clampers cannot bite and free a
                 fourth weapon slot (maxWeapons); switching claws back drops the extra weapon
 src/impacts.ts  World: what shots hit (the heightfield, boulders, the crabs' boxes set each frame in `moving`) with
-                surface and normal; impact effects by surface (sand, rock, shell); wreckFx for a cracked crab
+                surface and normal; `flat` on raycast / inCone / near (Bullet Hell's level guns): crabs and pieces count
+                in plan only, whatever level they stand on (columns), rocks as tall as they are, the sand stops nothing; impact effects by surface (sand, rock, shell); wreckFx for a cracked crab
 src/combat.ts   Combatant (health, hurt), DAMAGE per weapon, crabBox (a crab's hit box, owner = the combatant)
 src/enemy.ts    Enemy: a Player of an EnemyKind (random: a random shell and build; else the kind's weapons on planks),
                 tinted, scaled (Crab.scale), a softer Arsenal; a mind that keeps the kind's distance (0: charges), circles,
@@ -127,7 +128,8 @@ the start and from `structure.onChange` as pieces come off.
 ## Bullet Hell
 A second mode on the same page (`?mode=hell`, the HUD links between them). A machine gun (left button, bottomless) and
 a grenade launcher (right button, on a recharge: a charge bar on its chip) on the back from the start, tiny clampers (no
-claws action), an invulnerable shell, a quicker walk (speedScale 1.25), and every gun fires dead level (`Structure.flatAim`).
+claws action), an invulnerable shell, a quicker walk (speedScale 1.25), and every gun fires dead level (`Structure.flatAim`):
+anything in the line of fire is hit whatever level it stands on (the world's `flat` tests), rocks still shelter.
 Cracked opponents sometimes leave a magenta power-up where they fell (at least every third crack); each one taken climbs
 a stage on the primary or (once the primary has one) the grenades. Stages stack: heavier rounds, twin barrels, rapid
 fire, a trident at 45°, five-way, explosive rounds, a minigun rate, seven-way, a ring of twelve streams, then "Overkill"
