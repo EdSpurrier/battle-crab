@@ -5,12 +5,13 @@ import type { Ground } from './ground';
 /**
  * The player: a position on the sand, a facing and a velocity. The camera orbits freely round
  * a standing crab (look at its face); the moment the input pushes, the crab turns to face the
- * way it is pushed (relative to the camera) and walks that way. The crab model follows this
+ * way the camera looks and moves relative to it: forward and back along the look, sideways
+ * across it (a crab's sidestep), facing the same way throughout. The crab model follows this
  * each frame.
  */
 export class Player {
   position: Vec3;
-  /** Which way the crab faces (radians about +y): turns toward the walk direction, stays put otherwise. */
+  /** Which way the crab faces (radians about +y): turns to the camera's yaw while moving, stays put otherwise. */
   yaw = 0;
   speed = 3.2;
   /** How fast it turns to face a new direction (per second; higher is snappier). */
@@ -23,17 +24,19 @@ export class Player {
     this.crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), this.position, this.yaw);
   }
 
-  /** Move along `dir` (a direction on the ground, not necessarily unit; zero to stand still), turning to face it. */
-  update(dt: number, dir: Vec3): void {
+  /**
+   * Move along `dir` (a direction on the ground, not necessarily unit; zero to stand still) while
+   * turning to face `faceYaw` (the camera's). Standing still, the facing is left alone.
+   */
+  update(dt: number, dir: Vec3, faceYaw: number): void {
     const len = Math.hypot(dir[0], dir[2]);
     const x0 = this.position[0];
     const z0 = this.position[2];
     if (len > 1e-4) {
       const nx = dir[0] / len;
       const nz = dir[2] / len;
-      // Turn toward the walk direction the short way round, eased.
-      const want = Math.atan2(nx, nz);
-      const d = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
+      // Turn to the camera's way the short way round, eased.
+      const d = Math.atan2(Math.sin(faceYaw - this.yaw), Math.cos(faceYaw - this.yaw));
       this.yaw += d * Math.min(1, this.turnRate * dt);
       const step = this.speed * Math.min(1, len) * dt;
       const margin = 1.5;
