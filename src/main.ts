@@ -1,8 +1,11 @@
 import { Renderer, type Vec3 } from 'gridfall-engine';
 import { ThirdPersonCamera } from './camera';
+import { DAMAGE, crabBox } from './combat';
 import { Controls } from './controls';
+import { Enemy } from './enemy';
 import { buildGround } from './ground';
-import { World } from './impacts';
+import { World, wreckFx } from './impacts';
+import { LifeBars } from './lifebars';
 import { installLook } from './look';
 import { loadMap } from './map';
 import { MistSet } from './mist';
@@ -40,9 +43,31 @@ const player = new Player(renderer, ground, [map.spawn[0], 0, map.spawn[1]], she
 const structure = new Structure(renderer, build);
 player.crab.structure = structure;
 const world = new World((x, z) => ground.heightAt(x, z));
-const arsenal = new Arsenal(renderer, structure, world);
+const arsenal = new Arsenal(renderer, structure, world, player);
 camera.follow = player.position;
 camera.target = [player.position[0], player.position[1] + camera.height, player.position[2]];
+
+// ---------- opponents: three on the beach at a time, each with its own shell and build; a cracked one is replaced
+
+const ENEMIES = 3;
+const enemies: Enemy[] = [];
+let respawnIn = 0;
+function spawnPoint(): Vec3 {
+  for (let tries = 0; tries < 30; tries++) {
+    const x = 4 + Math.random() * (map.size - 8);
+    const z = 4 + Math.random() * (map.size - 8);
+    if (Math.hypot(x - player.position[0], z - player.position[2]) > 14) return [x, 0, z];
+  }
+  return [4, 0, 4];
+}
+for (let i = 0; i < ENEMIES; i++) enemies.push(new Enemy(renderer, ground, world, spawnPoint()));
+const lifeBars = new LifeBars(document.body);
+const cracked = document.createElement('div');
+cracked.id = 'cracked';
+cracked.hidden = true;
+document.body.appendChild(cracked);
+let deadFor = 0;
+let kills = 0;
 
 // Light and look: the sky model's sun, held at mid-morning (the clock does not run yet).
 renderer.dayNight.enabled = true;
@@ -143,10 +168,14 @@ window.addEventListener('mousedown', capture);
 window.addEventListener('click', capture);
 // The left button fires the chosen action (the claws take turns); the right button aims down the barrel while held.
 window.addEventListener('mousedown', (e) => {
-  if (overPanel(e) || (e.target instanceof Element && e.target.closest('a'))) return;
+  if (overPanel(e) || (e.target instanceof Element && e.target.closest('a')) || !player.alive) return;
   if (e.button === 0) {
-    if (action === 0) player.crab.snapNext();
-    else arsenal.trigger(true);
+    if (action === 0) {
+      player.crab.snapNext();
+      // A nip reaches a little way in front: whoever is there takes it.
+      const b = player.crab.body;
+      for (const o of world.inCone([b[12], b[13], b[14]], [b[8], 0, b[10]], 2.4, 0.7, player)) if (o instanceof Enemy) o.hurt(DAMAGE.claw);
+    } else arsenal.trigger(true);
   }
   if (e.button === 2) camera.aimZoom = 1;
 });
@@ -172,8 +201,27 @@ let fpsAt = last;
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
+  // The crabs' boxes for this frame's shots.
+  world.moving = [crabBox(player), ...enemies.filter((e) => e.alive).map(crabBox)];
   const intent = controls.update(keys, player.position);
-  player.update(dt, intent.dir, intent.faceYaw, intent.faceAlways, intent.run, intent.jump);
+  if (player.alive) player.update(dt, intent.dir, intent.faceYaw, intent.faceAlways, intent.run, intent.jump);
+  else {
+    // Cracked: a burst of shell, a few seconds down, then back at the start, whole.
+    if (deadFor === 0) {
+      const b = player.crab.body;
+      wreckFx(renderer, [b[12], b[13] + 0.3, b[14]]);
+      arsenal.trigger(false);
+      cracked.hidden = false;
+    }
+    player.update(dt, [0, 0, 0], player.yaw, false);
+    deadFor += dt;
+    cracked.innerHTML = `Cracked!<small>back on the beach in ${Math.ceil(3 - deadFor)}…</small>`;
+    if (deadFor >= 3) {
+      deadFor = 0;
+      player.revive([map.spawn[0], 0, map.spawn[1]]);
+      cracked.hidden = true;
+    }
+  }
   // Where the player aims: in topdown the ground marker; in 3rd person what the crosshair is on (or far
   // along the look). The crosshair ray starts just past the crab, so a camera looking down at it does
   // not aim at the ground under its own feet.
@@ -183,10 +231,27 @@ function frame(now: number): void {
     const dir = camera.lookDir();
     const past = camera.focusDistance() + 1.2;
     const from: Vec3 = [eye[0] + dir[0] * past, eye[1] + dir[1] * past, eye[2] + dir[2] * past];
-    const hit = world.raycast(from, dir, 120);
+    const hit = world.raycast(from, dir, 120, player);
     aimAt = hit ? hit.point : [from[0] + dir[0] * 120, from[1] + dir[1] * 120, from[2] + dir[2] * 120];
   }
   arsenal.update(dt, player.crab.body, aimAt);
+  // The opponents fight the player (none of them while the player is down); a cracked one is replaced after a while.
+  for (const e of enemies) e.update(dt, player.alive ? player : null);
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    if (!enemies[i].alive) {
+      enemies.splice(i, 1);
+      kills++;
+      respawnIn = 4;
+    }
+  }
+  if (enemies.length < ENEMIES) {
+    respawnIn -= dt;
+    if (respawnIn <= 0) {
+      enemies.push(new Enemy(renderer, ground, world, spawnPoint()));
+      respawnIn = 4;
+    }
+  }
+  lifeBars.update(camera, canvas, player, enemies);
   camera.update(dt);
   look.update();
   renderer.time = now / 1000;
@@ -194,7 +259,7 @@ function frame(now: number): void {
   renderer.render(camera);
   frames++;
   if (now - fpsAt > 500) {
-    stats.textContent = `${Math.round((frames * 1000) / (now - fpsAt))} fps · ${renderer.drawCalls} draws`;
+    stats.textContent = `${Math.round((frames * 1000) / (now - fpsAt))} fps · ${renderer.drawCalls} draws · ${kills} cracked`;
     frames = 0;
     fpsAt = now;
   }

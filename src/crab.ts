@@ -507,6 +507,10 @@ export class Crab {
     this.lift += (wantLift - this.lift) * (1 - Math.exp(-8 * dt));
     this.centre[1] = at[1] + HEIGHT + this.lift;
     this.wobbleEyes(dt, yaw, velocity);
+    if (this.flashLeft > 0) {
+      this.flashLeft -= dt;
+      if (this.flashLeft <= 0) this.applyTint();
+    }
     for (const claw of this.claws) {
       if (claw.snap < 0) continue;
       claw.snap += dt / SNAP_SECONDS;
@@ -619,6 +623,26 @@ export class Crab {
   /** The body's placement this frame (body space to the world). */
   get body(): Mat4 {
     return this.bodyModel;
+  }
+
+  /** A colour over the whole crab (linear rgb and how much), for telling sides apart; null for its own colours. */
+  private team: [number, number, number, number] | null = null;
+  private flashLeft = 0;
+
+  setTeam(tint: [number, number, number, number] | null): void {
+    this.team = tint;
+    this.applyTint();
+  }
+
+  /** Flash red for a moment (hit). */
+  flash(): void {
+    this.flashLeft = 0.12;
+    this.applyTint();
+  }
+
+  private applyTint(): void {
+    const t = this.flashLeft > 0 ? ([1, 0.15, 0.1, 0.75] as [number, number, number, number]) : this.team;
+    for (const i of this.owned) i.tint = t ?? undefined;
   }
 
   /** Take the crab out of the renderer and free its meshes (the build screen swapping shells). */

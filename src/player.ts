@@ -27,6 +27,19 @@ export class Player {
   private vy = 0;
   readonly velocity: Vec3 = [0, 0, 0];
   readonly crab: Crab;
+  /** Hit points: the shell's armour; at zero the crab is cracked. */
+  readonly maxHealth: number;
+  health: number;
+
+  get alive(): boolean {
+    return this.health > 0;
+  }
+
+  hurt(amount: number): void {
+    if (!this.alive) return;
+    this.health = Math.max(0, this.health - amount);
+    this.crab.flash();
+  }
 
   get airborne(): boolean {
     return this.air > 0 || this.vy > 0;
@@ -43,6 +56,18 @@ export class Player {
     // The shell's weight: slower with a heavy one, and a lower jump (height goes with the square of the take-off speed).
     this.speed *= shell.speed;
     this.jumpSpeed *= Math.sqrt(shell.jump);
+    this.maxHealth = shell.armor;
+    this.health = shell.armor;
+  }
+
+  /** Back whole at `at` (a respawn). */
+  revive(at: Vec3): void {
+    this.position[0] = at[0];
+    this.position[2] = at[2];
+    this.position[1] = this.ground.heightAt(at[0], at[2]);
+    this.air = 0;
+    this.vy = 0;
+    this.health = this.maxHealth;
   }
 
   /**

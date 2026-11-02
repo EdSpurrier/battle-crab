@@ -50,6 +50,12 @@ src/weapons.ts  Arsenal: the chosen weapon fires on the trigger (cannon balls wi
                 shots are particles and a ball mesh; nothing is hit yet
 src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a lit cell under the pointer; left
                 places, right removes, R turns; weapons take action slots 2-5 in placement order (4 at most)
+src/impacts.ts  World: what shots hit (the heightfield, boulders, the crabs' boxes set each frame in `moving`) with
+                surface and normal; impact effects by surface (sand, rock, shell); wreckFx for a cracked crab
+src/combat.ts   Combatant (health, hurt), DAMAGE per weapon, crabBox (a crab's hit box, owner = the combatant)
+src/enemy.ts    Enemy: a Player with a random shell and build, a blue team tint, a softer Arsenal (damage × 0.3,
+                a wandering aim error); a mind that keeps a distance, circles, fires in bursts, jumps; wrecks at 0
+src/lifebars.ts life bars over opponents (projected through the camera) and the player's along the bottom
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
 src/settings.ts SettingsPanel: sections of toggles / sliders (handle-less bars with an editable number) / choices /
@@ -68,6 +74,11 @@ The build runs locally, so the private engine needs no token in CI.
 ## Assets
 `Models/*.glb` are the game's source models (the siege snail rig is the first); the model viewer lists
 them automatically. Keep the folder flat; a file dropped in shows on the next dev reload or build.
+
+## Combat so far
+Three opponents on the beach at a time (main.ts ENEMIES), spawned at least 14 units from the player, one
+replaced 4 s after it is cracked. Health is the shell's armour. Hits flash the crab red. The player cracked
+sits 3 s under a "Cracked!" message, then is back at the spawn, whole. Shots never hit their shooter.
 
 ## Game feel decided so far
 - Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`). Space jumps.

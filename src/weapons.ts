@@ -1,4 +1,5 @@
 import { Mesh, MeshBuilder, material, translation, type Instance, type Mat4, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { DAMAGE, type Combatant } from './combat';
 import { impactFx, type Hit, type World } from './impacts';
 import { pieceType } from './shell';
 import { CANNON_SPEED, type Mounted, type Structure } from './structure';
@@ -24,7 +25,10 @@ interface Ball {
 interface Pending {
   at: number;
   hit: Hit;
+  damage: number;
 }
+
+const isCombatant = (o: unknown): o is Combatant => !!o && typeof o === 'object' && 'hurt' in o;
 
 const BALL: Vec = [0.12, 0.12, 0.13];
 const TRACER_SPEED = 70;
@@ -43,7 +47,8 @@ export class Arsenal {
   private readonly ballMesh: Mesh;
   private readonly ballMaterial = material({ roughness: 0.5, metallic: 0.5 });
 
-  constructor(private readonly renderer: Renderer, public structure: Structure, private readonly world: World) {
+  /** Who fires: their own box is never hit. `damageScale` softens an opponent's guns. */
+  constructor(private readonly renderer: Renderer, public structure: Structure, private readonly world: World, private readonly owner: unknown, private readonly damageScale = 1) {
     const b = new MeshBuilder();
     const segs = 8;
     const rings = 5;
@@ -85,7 +90,7 @@ export class Arsenal {
     // Gun hits whose tracers have arrived.
     for (let i = this.pending.length - 1; i >= 0; i--) {
       if (this.pending[i].at <= this.clock) {
-        impactFx(this.renderer, this.pending[i].hit, 1);
+        this.land(this.pending[i].hit, 1, this.pending[i].damage);
         this.pending.splice(i, 1);
       }
     }
@@ -120,7 +125,7 @@ export class Arsenal {
           if (this.held && rate > 0.55 && cool <= 0) {
             this.cooldown.set(w, 1 / (8 + rate * 22));
             w.kick = 0.6;
-            this.tracer(muzzle, facing, 0.03);
+            this.tracer(muzzle, facing, 0.03, DAMAGE.gatling);
           }
           break;
         }
@@ -129,12 +134,13 @@ export class Arsenal {
             this.cooldown.set(w, 0.11);
             // The whole gun rocks on its pintle, so a small kick.
             w.kick = 0.3;
-            this.tracer(muzzle, facing, 0.04);
+            this.tracer(muzzle, facing, 0.04, DAMAGE.machinegun);
           }
           break;
         case 'flamethrower':
           if (this.held) {
             w.kick = 0.3;
+            for (const o of this.world.inCone(muzzle, facing, 4.5, 0.3, this.owner)) if (isCombatant(o)) o.hurt(DAMAGE.flamethrower * dt * this.damageScale);
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: Math.max(1, Math.round(900 * dt)), color: [1, 0.8, 0.3], colorTo: [0.7, 0.12, 0.02], speed: 9, dir: facing, cone: 0.14, up: 0.6, life: 0.5, size: 0.14, gravity: -2.5, drag: 1.6, fadeCurve: 'ease-out', sizeCurve: 'up', shape: 'smoke' });
             if (Math.random() < dt * 30) this.renderer.particles.emit(muzzle[0] + facing[0] * 2, muzzle[1] + 0.4, muzzle[2] + facing[2] * 2, { count: 2, color: [0.25, 0.22, 0.2], colorTo: [0.1, 0.1, 0.1], speed: 0.8, up: 1.2, life: 1.8, size: 0.3, drag: 1, alpha: 0.4, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
           }
@@ -143,6 +149,12 @@ export class Arsenal {
           if (pulled && cool <= 0) {
             this.cooldown.set(w, 0.7);
             w.kick = 1;
+            for (const o of this.world.inCone(muzzle, facing, 2.2, 0.6, this.owner)) {
+              if (!isCombatant(o)) continue;
+              o.hurt(DAMAGE.knocker * this.damageScale);
+              const c = o.crab.body;
+              impactFx(this.renderer, { point: [c[12], c[13] + 0.4, c[14]], normal: [0, 1, 0], surface: 'shell', distance: 0, owner: o }, 3);
+            }
           }
           break;
       }
@@ -153,9 +165,9 @@ export class Arsenal {
       b.vel[1] -= 20 * dt;
       const next: Vec3 = [b.pos[0] + b.vel[0] * dt, b.pos[1] + b.vel[1] * dt, b.pos[2] + b.vel[2] * dt];
       b.life -= dt;
-      const hit = this.world.segment(b.pos, next);
+      const hit = this.world.segment(b.pos, next, this.owner);
       if (hit || b.life <= 0) {
-        if (hit) impactFx(this.renderer, hit, 4);
+        if (hit) this.land(hit, 4, DAMAGE.cannon);
         const list = this.renderer.instances;
         const k = list.indexOf(b.instance);
         if (k >= 0) list.splice(k, 1);
@@ -172,6 +184,12 @@ export class Arsenal {
     return m ? pieceType(m.piece.kind).name : 'Claws';
   }
 
+  /** A hit lands: its effect, and the damage to whoever was hit. */
+  private land(hit: Hit, size: number, damage: number): void {
+    impactFx(this.renderer, hit, size);
+    if (isCombatant(hit.owner)) hit.owner.hurt(damage * this.damageScale);
+  }
+
   private ball(at: Vec3, vel: Vec3): void {
     const instance: Instance = { mesh: this.ballMesh, model: translation(at[0], at[1], at[2]), material: this.ballMaterial };
     this.renderer.instances.push(instance);
@@ -179,13 +197,13 @@ export class Arsenal {
   }
 
   /** A gun's shot: a ray against the world, a tracer that lasts as long as the flight, the hit due when it lands. */
-  private tracer(muzzle: Vec3, facing: Vec3, spread: number): void {
+  private tracer(muzzle: Vec3, facing: Vec3, spread: number, damage: number): void {
     const d: Vec3 = [facing[0] + (Math.random() - 0.5) * spread, facing[1] + (Math.random() - 0.5) * spread, facing[2] + (Math.random() - 0.5) * spread];
     const l = Math.hypot(d[0], d[1], d[2]) || 1;
     const dir: Vec3 = [d[0] / l, d[1] / l, d[2] / l];
-    const hit = this.world.raycast(muzzle, dir, GUN_RANGE);
+    const hit = this.world.raycast(muzzle, dir, GUN_RANGE, this.owner);
     const flight = (hit ? hit.distance : GUN_RANGE) / TRACER_SPEED;
-    if (hit) this.pending.push({ at: this.clock + flight, hit });
+    if (hit) this.pending.push({ at: this.clock + flight, hit, damage });
     this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 1, color: [1, 0.95, 0.7], colorTo: [1, 0.7, 0.3], speed: TRACER_SPEED, dir, cone: 0, life: Math.max(0.02, flight), size: 0.11, stretch: 12, vary: 0, fadeCurve: 'none', sizeCurve: 'none', shape: 'spark' });
     this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 3, color: [1, 0.8, 0.4], colorTo: [1, 0.4, 0.1], speed: 2, dir: facing, cone: 0.6, life: 0.08, size: 0.1, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
   }
