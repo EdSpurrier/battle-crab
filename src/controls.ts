@@ -40,6 +40,8 @@ export interface Intent {
   faceAlways: boolean;
   /** Shift held: run. */
   run: boolean;
+  /** Space was pressed since the last frame: jump. */
+  jump: boolean;
 }
 
 export class Controls {
@@ -51,6 +53,7 @@ export class Controls {
   topDistance = 22;
   private saved: CameraSnapshot | null = null;
   private mouse: [number, number] | null = null;
+  private jumpQueued = false;
   private readonly marker: { mesh: OverlayMesh; model: Float32Array; onTop: boolean };
   /** Called after the mode changes (the HUD, the pointer lock). */
   onModeChange: ((mode: ControlMode) => void) | null = null;
@@ -112,6 +115,7 @@ export class Controls {
   key(code: string): boolean {
     if (code === 'KeyQ') return (this.turnView(1), true);
     if (code === 'KeyE') return (this.turnView(-1), true);
+    if (code === 'Space') return (this.jumpQueued = true);
     return false;
   }
 
@@ -127,11 +131,13 @@ export class Controls {
     const rt = this.camera.right();
     const dir: Vec3 = [fw[0] * f + rt[0] * r, 0, fw[2] * f + rt[2] * r];
     const run = keys.has('ShiftLeft') || keys.has('ShiftRight');
-    if (!this.topDown) return { dir, faceYaw: this.camera.yaw, faceAlways: false, run };
+    const jump = this.jumpQueued;
+    this.jumpQueued = false;
+    if (!this.topDown) return { dir, faceYaw: this.camera.yaw, faceAlways: false, run, jump };
     this.aim = this.mouse ? pickGround(this.camera, this.canvas, this.mouse[0], this.mouse[1], (x, z) => this.ground.heightAt(x, z), this.ground.size) : null;
     this.drawMarker();
     const faceYaw = this.aim ? Math.atan2(this.aim[0] - crab[0], this.aim[2] - crab[2]) : this.camera.yaw;
-    return { dir, faceYaw, faceAlways: !!this.aim, run };
+    return { dir, faceYaw, faceAlways: !!this.aim, run, jump };
   }
 
   /** The aim marker: a ring with four ticks, on the ground under the mouse. */

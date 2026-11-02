@@ -16,13 +16,22 @@ export const HEIGHT = 0.5;
 /** Ground height under a point: feet land on it. */
 export type GroundHeight = (x: number, z: number) => number;
 
-const STEP_TRIGGER = 0.26;
-/** A step's length in time at walking pace; steps quicken above WALK_SPEED down to STEP_SECONDS_MIN (a run). */
-const STEP_SECONDS = 0.13;
-const STEP_SECONDS_MIN = 0.06;
-const WALK_SPEED = 3.2;
-const STEP_LIFT = 0.2;
-const STEP_LEAD = 0.1;
+/** How far a foot may be from its spot before the leg steps: longer strides, fewer steps. Grows with speed (a run strides further). */
+const STEP_TRIGGER = 0.45;
+const STEP_TRIGGER_RUN = 0.75;
+/** A step's length in time at walking pace and at a run (in between, in proportion). */
+const STEP_SECONDS = 0.22;
+const STEP_SECONDS_RUN = 0.18;
+const WALK_SPEED = 4.8;
+const RUN_SPEED = 8.4;
+const STEP_LIFT = 0.26;
+/** How far ahead of the spot a foot lands, in seconds of the body's velocity, and the most it reaches ahead (world units) however fast. */
+const STEP_LEAD = 0.17;
+const STEP_LEAD_MAX = 0.75;
+/** A pincer's snap: how long it takes, how far the claw thrusts forward, how wide the jaw rests open (radians). */
+const SNAP_SECONDS = 0.28;
+const SNAP_THRUST = 0.45;
+const JAW_OPEN = 0.5;
 /** A planted foot further from its hip than this share of the leg's reach slides along, rather than stretch back to where it was. */
 const REACH_KEEP = 0.93;
 /** A group may start stepping once the other group's step is this far along (a quicker cadence at speed than waiting for it to land). */
@@ -32,7 +41,24 @@ const BODY: Vec = [0.5, 0.08, 0.03];
 const LEG: Vec = [0.42, 0.07, 0.03];
 const SHELL: Vec = [0.36, 0.24, 0.12];
 const SHELL_LIGHT: Vec = [0.42, 0.29, 0.15];
-const EYE: Vec = [0.02, 0.02, 0.02];
+const EYE_WHITE: Vec = [0.92, 0.92, 0.9];
+const PUPIL: Vec = [0.015, 0.015, 0.015];
+/** Googly eyes: the eyeball's radius, how far across it the pupil may slide (a share of the radius), its spring and damping, how hard a jolt moves it. */
+const EYE_RADIUS = 0.131;
+const PUPIL_RADIUS = 0.064;
+const PUPIL_RANGE = 0.55;
+const PUPIL_SPRING = 30;
+const PUPIL_DAMPING = 5;
+const PUPIL_JOLT = 0.06;
+/** Idle glances: standing still, the eyes look somewhere new every so often (seconds between, how far over). */
+const GLANCE_EVERY: [number, number] = [0.7, 2.6];
+const GLANCE_RANGE = 0.42;
+/** The eyelid: skin over the back of the eyeball, a little larger than it, reaching this far forward (a share of the radius). */
+const LID_SCALE = 1.07;
+const LID_REACH = 0.15;
+/** In the air the feet tuck in under the body: this share of the way from hip to rest spot, this far below the body's centre. */
+const TUCK = 0.7;
+const TUCK_DROP = 0.3;
 
 // ---------- small vector helpers (the engine's math gives normalize / cross / dot / sub)
 
@@ -56,8 +82,8 @@ function toWorldDir(d: Vec3, yaw: number): Vec3 {
 
 // ---------- meshes
 
-/** A low-poly ellipsoid centred at (cx, cy, cz), flat-shaded. */
-function ellipsoid(cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, color: Vec, segs = 12, rings = 7): MeshData {
+/** A low-poly ellipsoid centred at (cx, cy, cz), flat-shaded; `keep` leaves out the faces whose middle (offset from the centre) it refuses. */
+function ellipsoid(cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, color: Vec, segs = 12, rings = 7, keep?: (x: number, y: number, z: number) => boolean): MeshData {
   const b = new MeshBuilder();
   const at = (i: number, j: number): Vec => {
     const th = (i / segs) * Math.PI * 2;
@@ -65,8 +91,16 @@ function ellipsoid(cx: number, cy: number, cz: number, rx: number, ry: number, r
     const cp = Math.cos(ph);
     return [cx + rx * cp * Math.cos(th), cy + ry * Math.sin(ph), cz + rz * cp * Math.sin(th)];
   };
+  const wanted = (i: number, j: number): boolean => {
+    if (!keep) return true;
+    const th = ((i + 0.5) / segs) * Math.PI * 2;
+    const ph = -Math.PI / 2 + ((j + 0.5) / rings) * Math.PI;
+    const cp = Math.cos(ph);
+    return keep(rx * cp * Math.cos(th), ry * Math.sin(ph), rz * cp * Math.sin(th));
+  };
   for (let j = 0; j < rings; j++) {
     for (let i = 0; i < segs; i++) {
+      if (!wanted(i, j)) continue;
       if (j === 0) b.tri(at(i, 0), at(i, 1), at(i + 1, 1), color);
       else if (j === rings - 1) b.tri(at(i, j), at(i, rings), at(i + 1, j), color);
       else b.quad(at(i, j), at(i, j + 1), at(i + 1, j + 1), at(i + 1, j), color);
@@ -158,17 +192,36 @@ interface Claw {
   side: number;
   upper: Instance;
   lower: Instance;
-  pincer: Instance;
+  /** The pincer: a fixed lower jaw along the forearm and an upper jaw hinged at the wrist. */
+  jawLower: Instance;
+  jawUpper: Instance;
+  /** A snap in progress, 0..1 (-1: none). */
+  snap: number;
+}
+
+/** A googly eye: the eyeball's centre in body space and a pupil that slides about on it (offset and speed across and up, as shares of the radius). */
+interface Eye {
+  centre: Vec3;
+  pupil: Instance;
+  ox: number;
+  oy: number;
+  vx: number;
+  vy: number;
 }
 
 export class Crab {
   private readonly legs: Leg[] = [];
   private readonly claws: Claw[] = [];
-  /** Body, shell and eyes: built in body space, all placed by one matrix. */
+  private readonly eyes: Eye[] = [];
+  /** Body, shell and eyeballs: built in body space, all placed by one matrix. */
   private readonly bodyModel: Mat4 = new Float32Array(16);
   private readonly ground: GroundHeight;
   private phase = 0;
   private readonly centre: Vec3 = [0, HEIGHT, 0];
+  private lastVelocity: Vec3 = [0, 0, 0];
+  /** Where the eyes are looking (both the same way): an offset the pupils settle to, picked afresh now and then when idle. */
+  private gaze: [number, number] = [0, 0];
+  private glanceIn = 1;
 
   constructor(renderer: Renderer, ground: GroundHeight, at: Vec3, yaw: number) {
     this.ground = ground;
@@ -190,10 +243,10 @@ export class Crab {
     fixed(ellipsoid(0, 0.3, -0.3, 0.62, 0.52, 0.75, SHELL, 14, 8), shellSkin);
     fixed(ellipsoid(-0.3, 0.62, -0.75, 0.4, 0.36, 0.42, SHELL_LIGHT, 12, 6), shellSkin);
     fixed(ellipsoid(-0.58, 0.9, -0.95, 0.22, 0.2, 0.24, SHELL, 10, 5), shellSkin);
-    // Eye stalks and eyes.
+    // Eye stalks and big googly eyes: a white ball on each stalk, a pupil that slides about on it.
     for (const s of [-1, 1]) {
       const base: Vec3 = [s * 0.14, 0.08, 0.42];
-      const tip: Vec3 = [s * 0.2, 0.42, 0.55];
+      const tip: Vec3 = [s * 0.27, 0.5, 0.52];
       const b = new MeshBuilder();
       const d = normalize(sub(tip, base));
       const side = scale(normalize(cross(d, [0, 0, 1])), 0.025);
@@ -205,7 +258,13 @@ export class Crab {
       q(corner(base, 1, -1), corner(base, 1, 1), corner(tip, 1, 1), corner(tip, 1, -1));
       q(corner(base, -1, 1), corner(base, -1, -1), corner(tip, -1, -1), corner(tip, -1, 1));
       fixed(b.build());
-      fixed(ellipsoid(tip[0], tip[1], tip[2], 0.07, 0.07, 0.07, EYE, 8, 5));
+      const eyeCentre: Vec3 = [tip[0] + s * 0.03, tip[1] + EYE_RADIUS * 0.7, tip[2] + 0.02];
+      fixed(ellipsoid(eyeCentre[0], eyeCentre[1], eyeCentre[2], EYE_RADIUS, EYE_RADIUS, EYE_RADIUS, EYE_WHITE, 14, 8));
+      // The eyelid: skin over the back of the ball (and a rim round the front), a little larger than it.
+      const lid = EYE_RADIUS * LID_SCALE;
+      fixed(ellipsoid(eyeCentre[0], eyeCentre[1], eyeCentre[2], lid, lid, lid, BODY, 14, 8, (_x, _y, z) => z < EYE_RADIUS * LID_REACH));
+      // The pupil: a flat disc, posed on the eyeball's surface each frame (built along +y: poseAlong stands it on its direction).
+      this.eyes.push({ centre: eyeCentre, pupil: part(ellipsoid(0, 0, 0, PUPIL_RADIUS, 0.03, PUPIL_RADIUS, PUPIL, 12, 4)), ox: 0, oy: 0, vx: 0, vy: 0 });
     }
 
     // Three pairs of walking legs: front legs splay forward, back legs back; knees up and out.
@@ -213,8 +272,8 @@ export class Crab {
       for (const s of [-1, 1]) {
         const z = 0.3 - i * 0.3;
         const splay = (1 - i) * 0.25;
-        const l1 = 0.55;
-        const l2 = 0.75;
+        const l1 = 0.6;
+        const l2 = 0.85;
         this.legs.push({
           hip: [s * 0.4, 0, z],
           rest: [s * 1.05, 0, z + splay],
@@ -245,7 +304,10 @@ export class Crab {
         side: s,
         upper: part(rod(l1, 0.1, LEG)),
         lower: part(rod(l2, 0.085, LEG)),
-        pincer: part(ellipsoid(0, 0.2, 0, 0.15, 0.24, 0.11, BODY, 10, 6)),
+        // Jaws built along +y from the wrist, one each side of the hinge (local z is up once posed).
+        jawLower: part(ellipsoid(0, 0.2, -0.05, 0.14, 0.25, 0.065, BODY, 10, 6)),
+        jawUpper: part(ellipsoid(0, 0.19, 0.05, 0.13, 0.23, 0.06, BODY, 10, 6)),
+        snap: -1,
       });
     }
 
@@ -257,29 +319,56 @@ export class Crab {
     this.pose(yaw, 0);
   }
 
-  /** Where a leg's foot wants to be now: its rest spot, led a little by the body's velocity, on the ground. */
+  /** Where a leg's foot wants to be now: its rest spot, led a little by the body's velocity (never further than STEP_LEAD_MAX), on the ground. */
   private restSpot(leg: Leg, yaw: number, velocity: Vec3): Vec3 {
     const p = toWorld(leg.rest, this.centre, yaw);
-    p[0] += velocity[0] * STEP_LEAD;
-    p[2] += velocity[2] * STEP_LEAD;
+    const speed = Math.hypot(velocity[0], velocity[2]);
+    const lead = speed > 1e-4 ? Math.min(STEP_LEAD, STEP_LEAD_MAX / speed) : 0;
+    p[0] += velocity[0] * lead;
+    p[2] += velocity[2] * lead;
     p[1] = this.ground(p[0], p[2]);
     return p;
   }
 
+  /** How far along from walking pace to running, 0..1. */
+  private static pace(speed: number): number {
+    return Math.min(1, Math.max(0, (speed - WALK_SPEED) / (RUN_SPEED - WALK_SPEED)));
+  }
+
   /**
-   * A frame: `at` is the crab's position on the sand, `yaw` which way it faces (the camera's),
-   * `velocity` how it is moving in the world.
+   * A frame: `at` is the crab's position (on the sand, or above it in a jump), `yaw` which way it
+   * faces, `velocity` how it is moving in the world; `airborne` while it jumps (the feet tuck in).
    */
-  update(dt: number, at: Vec3, yaw: number, velocity: Vec3): void {
+  update(dt: number, at: Vec3, yaw: number, velocity: Vec3, airborne = false): void {
     const speed = Math.hypot(velocity[0], velocity[2]);
     this.phase += dt * (1.5 + speed * 3);
     this.centre[0] = at[0];
     this.centre[2] = at[2];
     this.centre[1] = at[1] + HEIGHT;
+    this.wobbleEyes(dt, yaw, velocity);
+    for (const claw of this.claws) {
+      if (claw.snap < 0) continue;
+      claw.snap += dt / SNAP_SECONDS;
+      if (claw.snap >= 1) claw.snap = -1;
+    }
+
+    if (airborne) {
+      // Feet drawn in under the body, no stepping; on landing they are near their spots and the gait takes over.
+      const k = 1 - Math.exp(-14 * dt);
+      for (const leg of this.legs) {
+        leg.t = -1;
+        const tuck = toWorld([leg.hip[0] + (leg.rest[0] - leg.hip[0]) * TUCK, -TUCK_DROP, leg.hip[2] + (leg.rest[2] - leg.hip[2]) * TUCK], this.centre, yaw);
+        leg.foot = mix(leg.foot, tuck, k);
+      }
+      this.pose(yaw, speed);
+      return;
+    }
 
     // Which group of legs may step: one group at a time, the next allowed to start once the first
-    // is most of the way down (at a run the cadence has to be quick). Steps shorten with speed.
-    const stepSeconds = speed > WALK_SPEED ? Math.max(STEP_SECONDS_MIN, (STEP_SECONDS * WALK_SPEED) / speed) : STEP_SECONDS;
+    // is most of the way down. From a walk to a run the steps get a little quicker and a good deal longer.
+    const pace = Crab.pace(speed);
+    const stepSeconds = STEP_SECONDS + (STEP_SECONDS_RUN - STEP_SECONDS) * pace;
+    const trigger = STEP_TRIGGER + (STEP_TRIGGER_RUN - STEP_TRIGGER) * pace;
     const stepping = [false, false];
     const busy = [false, false];
     for (const leg of this.legs) {
@@ -294,7 +383,7 @@ export class Crab {
         if (leg.group !== group) continue;
         const want = this.restSpot(leg, yaw, velocity);
         const hip = toWorld(leg.hip, this.centre, yaw);
-        if (distance(leg.foot, want) > STEP_TRIGGER || distance(leg.foot, hip) > (leg.l1 + leg.l2) * 0.97) need = true;
+        if (distance(leg.foot, want) > trigger || distance(leg.foot, hip) > (leg.l1 + leg.l2) * 0.97) need = true;
       }
       if (!need) continue;
       for (const leg of this.legs) {
@@ -341,9 +430,77 @@ export class Crab {
     this.pose(yaw, speed);
   }
 
+  /** Snap a pincer: the crab's left (+1) or right (-1) claw thrusts forward and closes. Ignored mid-snap. */
+  snap(side: 1 | -1): void {
+    const claw = this.claws.find((c) => c.side === side);
+    if (claw && claw.snap < 0) claw.snap = 0;
+  }
+
+  /**
+   * Googly eyes: each pupil is a weight on a spring in the eyeball, jolted the other way whenever the
+   * crab speeds up, slows, turns or jumps, and settling back to looking forward.
+   */
+  private wobbleEyes(dt: number, yaw: number, velocity: Vec3): void {
+    if (dt <= 0) return;
+    // The change in velocity since last frame, in the crab's own frame (x: its left, y: up, z: forward).
+    const ax = (velocity[0] - this.lastVelocity[0]) / dt;
+    const ay = (velocity[1] - this.lastVelocity[1]) / dt;
+    const az = (velocity[2] - this.lastVelocity[2]) / dt;
+    this.lastVelocity = [velocity[0], velocity[1], velocity[2]];
+    const s = Math.sin(yaw);
+    const c = Math.cos(yaw);
+    const sideways = ax * c - az * s;
+    const forwardA = ax * s + az * c;
+    // Idle, the eyes glance about: somewhere new every so often, back to the front now and then; moving, they look ahead.
+    const speed = Math.hypot(velocity[0], velocity[2]);
+    if (speed < 0.3) {
+      this.glanceIn -= dt;
+      if (this.glanceIn <= 0) {
+        this.glanceIn = GLANCE_EVERY[0] + Math.random() * (GLANCE_EVERY[1] - GLANCE_EVERY[0]);
+        if (Math.random() < 0.3) this.gaze = [0, 0];
+        else {
+          const a = Math.random() * Math.PI * 2;
+          const r = GLANCE_RANGE * (0.4 + Math.random() * 0.6);
+          this.gaze = [Math.cos(a) * r, Math.sin(a) * r * 0.6];
+        }
+      }
+    } else {
+      this.gaze = [0, 0];
+      this.glanceIn = 0.6;
+    }
+    for (const eye of this.eyes) {
+      // Accelerating forward throws the pupil back and down a little; a sideways jolt, across; a jump, down then up.
+      const fx = -sideways * PUPIL_JOLT - (eye.ox - this.gaze[0]) * PUPIL_SPRING - eye.vx * PUPIL_DAMPING;
+      const fy = (-ay - forwardA * 0.5) * PUPIL_JOLT - (eye.oy - this.gaze[1]) * PUPIL_SPRING - eye.vy * PUPIL_DAMPING;
+      eye.vx += fx * dt;
+      eye.vy += fy * dt;
+      eye.ox += eye.vx * dt;
+      eye.oy += eye.vy * dt;
+      const r = Math.hypot(eye.ox, eye.oy);
+      if (r > PUPIL_RANGE) {
+        eye.ox *= PUPIL_RANGE / r;
+        eye.oy *= PUPIL_RANGE / r;
+        // Hitting the rim: stop going further, keep the slide along it.
+        const dot = eye.vx * eye.ox + eye.vy * eye.oy;
+        if (dot > 0) {
+          eye.vx -= (dot * eye.ox) / (PUPIL_RANGE * PUPIL_RANGE);
+          eye.vy -= (dot * eye.oy) / (PUPIL_RANGE * PUPIL_RANGE);
+        }
+      }
+    }
+  }
+
   private pose(yaw: number, speed: number): void {
     poseBody(this.bodyModel, this.centre, yaw);
     const forward = toWorldDir([0, 0, 1], yaw);
+    for (const eye of this.eyes) {
+      // The pupil sits on the eyeball's surface, forward of centre, slid by its offset.
+      const dirLocal = normalize([eye.ox, eye.oy, 1]);
+      const dir = toWorldDir(dirLocal, yaw);
+      const on = toWorld(eye.centre, this.centre, yaw);
+      const at = add(on, scale(dir, EYE_RADIUS - 0.012));
+      poseAlong(eye.pupil.model, at, add(at, dir), [0, 1, 0]);
+    }
     for (const leg of this.legs) {
       const hip = toWorld(leg.hip, this.centre, yaw);
       const { joint, end } = twoBone(hip, leg.foot, leg.l1, leg.l2, toWorldDir(leg.pole, yaw));
@@ -353,14 +510,22 @@ export class Crab {
     for (const claw of this.claws) {
       const shoulder = toWorld(claw.shoulder, this.centre, yaw);
       const sway = Math.sin(this.phase * 2 + claw.side) * (0.02 + Math.min(0.06, speed * 0.02));
-      const rest: Vec3 = [claw.rest[0], claw.rest[1] + sway, claw.rest[2] + sway * 0.5];
+      // A snap: the claw thrusts forward and a little up over the snap, the jaw shutting at its peak.
+      const snapping = claw.snap >= 0;
+      const thrust = snapping ? Math.sin(claw.snap * Math.PI) : 0;
+      const rest: Vec3 = [claw.rest[0] - claw.side * thrust * 0.1, claw.rest[1] + sway + thrust * 0.12, claw.rest[2] + sway * 0.5 + thrust * SNAP_THRUST];
       const target = toWorld(rest, this.centre, yaw);
       const { joint, end } = twoBone(shoulder, target, claw.l1, claw.l2, toWorldDir(claw.pole, yaw));
       poseAlong(claw.upper.model, shoulder, joint, forward);
       poseAlong(claw.lower.model, joint, end, forward);
-      // The pincer carries on along the forearm.
-      const on = add(end, sub(end, joint));
-      poseAlong(claw.pincer.model, end, on, [0, 1, 0]);
+      // The pincer carries on along the forearm: the lower jaw fixed, the upper hinged open at the wrist.
+      const dir = normalize(sub(end, joint));
+      poseAlong(claw.jawLower.model, end, add(end, dir), [0, 1, 0]);
+      const open = JAW_OPEN * (1 - thrust);
+      let up = sub([0, 1, 0], scale(dir, dot([0, 1, 0], dir)));
+      up = length(up) < 1e-4 ? [0, 0, 1] : normalize(up);
+      const hinged = add(scale(dir, Math.cos(open)), scale(up, Math.sin(open)));
+      poseAlong(claw.jawUpper.model, end, add(end, hinged), [0, 1, 0]);
     }
   }
 }
