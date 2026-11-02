@@ -44,6 +44,9 @@ src/player.ts   the player: position, facing (the camera's while moving), veloci
 src/controls.ts the two control schemes (settings or C), topdown the default: "3rd person" (mouse orbits, pointer lock) and "topdown"
                 (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;
                 Q/E turn); the third-person camera's settings are kept while in top down
+src/gamepad.ts  GamepadInput: the first connected pad (standard mapping) polled each frame: left stick moves, right
+                stick faces (top down: the aim marker; 3rd person: orbits), LB / RB / LT / RT fire action slots 1-4 outright,
+                left stick pressed in runs, A jumps; main.ts merges it over the keys and mouse (PadState)
 src/pick.ts     pickGround: the ground point under a screen position (ray march + bisection on the heightfield)
 src/overlayShapes.ts  bands on the ground (rings, footprints, the aim marker) as overlay data
 src/models.ts   the model viewer (models.html): every .glb in Models/ (import.meta.glob), clips, turntable, wireframe
@@ -68,7 +71,9 @@ src/weapons.ts  Arsenal: ammo per weapon (AMMO; refill), the chosen weapon fires
                 48 at most; a sunlit beach needs intensities in the tens to show)
 src/pickups.ts  ammo crates (refill), health boxes (half back), starfish (8 s invincible); bob, taken by walking over
 src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a lit cell under the pointer; left
-                places, right removes, R turns; weapons take action slots 2-5 in placement order (4 at most)
+                places, right removes, R turns; four action slots (MAX_ACTIONS): the claws take the first when they can
+                bite (CLAWS[k].works), weapons the rest in placement order; the tiny clampers cannot bite and free a
+                fourth weapon slot (maxWeapons); switching claws back drops the extra weapon
 src/impacts.ts  World: what shots hit (the heightfield, boulders, the crabs' boxes set each frame in `moving`) with
                 surface and normal; impact effects by surface (sand, rock, shell); wreckFx for a cracked crab
 src/combat.ts   Combatant (health, hurt), DAMAGE per weapon, crabBox (a crab's hit box, owner = the combatant)
@@ -113,9 +118,11 @@ a round crab pushed out of turned boxes each frame (`unblock`), so a crab can hi
   Sprinting spends stamina (`Player.stamina`, 0..1: 7 s unladen × weightFactor, back in 5 s; at 0 the crab is
   winded until a third is back); the thin bar under the life bar, magenta when winded.
   The gait steps slowly with long strides (STEP_TRIGGER, STEP_SECONDS, STEP_LEAD in crab.ts).
-- Actions: 1 is the claws, 2-5 the weapons on the shell in build order. The left button fires the chosen
-  action (claws take turns: `Crab.snapNext`); the right button aims down the barrel (`camera.aimZoom`:
-  narrower view, camera in). Googly eyes: pupils are weights on springs.
+- Actions: four slots (main.ts `actions()`): the claws first when they work, then the weapons on the shell in
+  build order. Keys 1-4 choose, the left button fires the chosen one (claws take turns: `Crab.snapNext`); the
+  right button aims down the barrel (`camera.aimZoom`: narrower view, camera in). A gamepad fires the slots
+  directly, several at once: every weapon has its own trigger (`Arsenal.fire(m, down)`; `trigger` is the chosen
+  one's, `releaseAll` on blur or death). Googly eyes: pupils are weights on springs.
 - The mouse orbits the camera with no button held (pointer lock on any click, Esc releases). A
   standing crab does not turn with the camera (you can look at its face). While any key is held the
   crab turns, eased, to face the camera's way and moves relative to it: W/S forward and back along

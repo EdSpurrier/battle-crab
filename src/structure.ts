@@ -1,6 +1,6 @@
 import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { shatter, type Obstacle } from './impacts';
-import { CELL, MATERIALS, burns, cellCentre, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type ShellBuild, type ShellType } from './shell';
+import { CELL, MATERIALS, burns, cellCentre, maxWeapons, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type ShellBuild, type ShellType } from './shell';
 
 /**
  * What is built on the shell, drawn and kept: one mesh per piece in its cell, in body space,
@@ -262,7 +262,7 @@ export class Structure {
         this.instances.push(mi);
         part.moving = { instance: mi, kind: piece.kind };
       }
-      if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < 4) {
+      if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < maxWeapons(build.claws)) {
         const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, anchor: [0, 0, 0], muzzle: [0, 0, 0], direction: [0, 0, 1], chainLength: (CHAIN + BALL * 0.6) * WEAPON_SCALE };
         this.weapons.push(weapon);
         const p = shape.pivot;

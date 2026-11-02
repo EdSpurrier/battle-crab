@@ -3,15 +3,16 @@ import { Crab } from './crab';
 import { buildGround } from './ground';
 import { defaultMap } from './map';
 import { SettingsPanel } from './settings';
-import { CELL, CLAWS, CLAW_KINDS, MATERIALS, MATERIAL_IDS, MAX_WEAPONS, PIECES, SHELLS, buildWeight, canPlace, cellAt, cellCentre, inReach, loadBuild, pieceType, saveBuild, shellType, weightFactor, weaponsOf, type ClawKind, type Material, type Piece, type PieceKind, type ShellBuild, type ShellId } from './shell';
+import { CELL, CLAWS, CLAW_KINDS, MATERIALS, MATERIAL_IDS, PIECES, SHELLS, buildWeight, canPlace, cellAt, cellCentre, inReach, loadBuild, maxWeapons, pieceType, saveBuild, shellType, weightFactor, weaponsOf, type ClawKind, type Material, type Piece, type PieceKind, type ShellBuild, type ShellId } from './shell';
 import { Structure } from './structure';
 
 /**
  * The Battle Shell screen: the crab on a patch of sand, its shell's deck gridded, and a panel of
  * shells to wear and pieces to build with. Point at the deck or at a piece: the cell you would
  * fill lights up; the left button places the chosen piece there, the right button removes the
- * piece under the pointer, R turns the piece a quarter. Weapons take the action slots 2 to 5 in
- * the order they are placed. Saved in the browser as you go; the game wears it on its next load.
+ * piece under the pointer, R turns the piece a quarter. There are four action slots: the claws take
+ * the first and weapons the rest in the order they are placed, or, with the tiny clampers that cannot
+ * bite, four weapons. Saved in the browser as you go; the game wears it on its next load.
  */
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 const stats = document.getElementById('stats')!;
@@ -107,7 +108,7 @@ function pick(): void {
 function placeable(): boolean {
   if (!target || piece === 'erase') return false;
   const type = pieceType(piece);
-  if (type.weapon && weaponsOf(build).length >= MAX_WEAPONS) return false;
+  if (type.weapon && weaponsOf(build).length >= maxWeapons(build.claws)) return false;
   // Something to hold it: the deck's floor, or a held piece next to it (below, beside: an arm reaches out on beams).
   return canPlace(structure.shell, build.pieces, target);
 }
@@ -222,8 +223,9 @@ function clearDeck(button: HTMLButtonElement): void {
 function showSlots(): void {
   if (!slotsNote) return;
   const weapons = weaponsOf(build);
-  const lines = ['1 Claws', ...weapons.map((w, i) => `${i + 2} ${pieceType(w.kind).name}`)];
-  const spare = MAX_WEAPONS - weapons.length;
+  const claws = CLAWS[build.claws].works;
+  const lines = [...(claws ? ['1 Claws'] : []), ...weapons.map((w, i) => `${i + (claws ? 2 : 1)} ${pieceType(w.kind).name}`)];
+  const spare = maxWeapons(build.claws) - weapons.length;
   const weight = buildWeight(build.pieces, build.claws);
   const f = weightFactor(weight);
   const shell = structure.shell;
@@ -292,10 +294,13 @@ function buildPanel(): void {
     const b = document.createElement('button');
     b.type = 'button';
     b.textContent = CLAWS[k].name;
-    b.title = `${CLAWS[k].blurb} Damage ${CLAWS[k].damage}, weight ${CLAWS[k].weight}.`;
+    b.title = `${CLAWS[k].blurb} ${CLAWS[k].works ? `Damage ${CLAWS[k].damage}, weight` : 'Weight'} ${CLAWS[k].weight}.`;
     b.classList.toggle('on', k === build.claws);
     b.addEventListener('click', () => {
       build.claws = k;
+      // Working claws take a slot back: a fourth weapon placed beside the tiny ones comes off.
+      const keep = new Set(weaponsOf(build));
+      build.pieces = build.pieces.filter((p) => !pieceType(p.kind).weapon || keep.has(p));
       rebuildCrab();
     });
     clawList.appendChild(b);
