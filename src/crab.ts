@@ -17,9 +17,16 @@ export const HEIGHT = 0.5;
 export type GroundHeight = (x: number, z: number) => number;
 
 const STEP_TRIGGER = 0.26;
+/** A step's length in time at walking pace; steps quicken above WALK_SPEED down to STEP_SECONDS_MIN (a run). */
 const STEP_SECONDS = 0.13;
+const STEP_SECONDS_MIN = 0.06;
+const WALK_SPEED = 3.2;
 const STEP_LIFT = 0.2;
 const STEP_LEAD = 0.1;
+/** A planted foot further from its hip than this share of the leg's reach slides along, rather than stretch back to where it was. */
+const REACH_KEEP = 0.93;
+/** A group may start stepping once the other group's step is this far along (a quicker cadence at speed than waiting for it to land). */
+const OVERLAP_AT = 0.6;
 
 const BODY: Vec = [0.5, 0.08, 0.03];
 const LEG: Vec = [0.42, 0.07, 0.03];
@@ -270,11 +277,18 @@ export class Crab {
     this.centre[2] = at[2];
     this.centre[1] = at[1] + HEIGHT;
 
-    // Which group of legs may step: only one group is ever off the ground.
+    // Which group of legs may step: one group at a time, the next allowed to start once the first
+    // is most of the way down (at a run the cadence has to be quick). Steps shorten with speed.
+    const stepSeconds = speed > WALK_SPEED ? Math.max(STEP_SECONDS_MIN, (STEP_SECONDS * WALK_SPEED) / speed) : STEP_SECONDS;
     const stepping = [false, false];
-    for (const leg of this.legs) if (leg.t >= 0) stepping[leg.group] = true;
+    const busy = [false, false];
+    for (const leg of this.legs) {
+      if (leg.t < 0) continue;
+      stepping[leg.group] = true;
+      if (leg.t < OVERLAP_AT) busy[leg.group] = true;
+    }
     for (const group of [0, 1]) {
-      if (stepping[1 - group] || stepping[group]) continue;
+      if (busy[1 - group] || stepping[group]) continue;
       let need = false;
       for (const leg of this.legs) {
         if (leg.group !== group) continue;
@@ -295,10 +309,22 @@ export class Crab {
     }
 
     // Move the stepping feet along their arcs (toward where the spot is now, so a fast crab's feet keep up).
+    // A planted foot the body has outrun slides along within the leg's reach rather than stretch back
+    // to where it was put down.
     let bob = 0;
     for (const leg of this.legs) {
-      if (leg.t < 0) continue;
-      leg.t = Math.min(1, leg.t + dt / STEP_SECONDS);
+      if (leg.t < 0) {
+        const hip = toWorld(leg.hip, this.centre, yaw);
+        const reach = (leg.l1 + leg.l2) * REACH_KEEP;
+        const d = distance(leg.foot, hip);
+        if (d > reach) {
+          const k = reach / d;
+          leg.foot = [hip[0] + (leg.foot[0] - hip[0]) * k, 0, hip[2] + (leg.foot[2] - hip[2]) * k];
+          leg.foot[1] = this.ground(leg.foot[0], leg.foot[2]);
+        }
+        continue;
+      }
+      leg.t = Math.min(1, leg.t + dt / stepSeconds);
       leg.to = this.restSpot(leg, yaw, velocity);
       const t = leg.t;
       const ease = t * t * (3 - 2 * t);
