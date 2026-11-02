@@ -48,9 +48,9 @@ export class ThirdPersonCamera {
     return [Math.sin(this.yaw), 0, Math.cos(this.yaw)];
   }
 
-  /** The camera's right along the ground. */
+  /** The camera's right along the ground (forward × up). */
   right(): Vec3 {
-    return [Math.cos(this.yaw), 0, -Math.sin(this.yaw)];
+    return [-Math.cos(this.yaw), 0, Math.sin(this.yaw)];
   }
 
   rotate(dyaw: number, dpitch: number): void {

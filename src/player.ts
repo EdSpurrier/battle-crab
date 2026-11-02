@@ -1,54 +1,42 @@
-import { Mesh, box, material, multiply, rotationY, translation, type Instance, type Mat4, type Renderer, type Vec3 } from 'gridfall-engine';
+import type { Renderer, Vec3 } from 'gridfall-engine';
+import { Crab } from './crab';
 import type { Ground } from './ground';
 
 /**
- * The crab, as a box for now: a position, a facing and a speed. Walks where it is pushed (a
- * direction on the ground from the input) and turns to face that way. The shell and the weapon
- * platform built on it come later; for now this is one box that the camera follows.
+ * The player: a position on the sand, a facing (where the camera aims: the crab always faces the
+ * way the player looks) and a velocity. Scuttles in any direction the input pushes, sideways as
+ * readily as forward, as a crab does. The crab model follows this each frame.
  */
 export class Player {
   position: Vec3;
-  /** Which way the box faces (radians about +y); turns toward the walk direction. */
+  /** Which way the crab faces (radians about +y): set from the camera every frame. */
   yaw = 0;
-  speed = 4.5;
-  turnRate = 10;
-  readonly instance: Instance;
-  private readonly model: Mat4 = new Float32Array(16);
-  private readonly tmpT: Mat4 = new Float32Array(16);
-  private readonly tmpR: Mat4 = new Float32Array(16);
+  speed = 3.2;
+  readonly velocity: Vec3 = [0, 0, 0];
+  readonly crab: Crab;
 
   constructor(renderer: Renderer, private readonly ground: Ground, start: Vec3) {
-    this.position = [start[0], start[1], start[2]];
-    // A crab-coloured body box (linear rgb), long along +z (the way it faces), low to the sand.
-    const body = box(-0.45, 0, -0.6, 0.45, 0.55, 0.6, [0.5, 0.08, 0.03]);
-    this.instance = { mesh: new Mesh(renderer.gl, body), model: this.model, material: material({ roughness: 0.6 }) };
-    renderer.instances.push(this.instance);
-    this.pose();
+    this.position = [start[0], ground.heightAt(start[0], start[2]), start[2]];
+    this.crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), this.position, this.yaw);
   }
 
-  /** Walk along `dir` (a direction on the ground, not necessarily unit; zero to stand still). */
-  update(dt: number, dir: Vec3): void {
+  /** Move along `dir` (a direction on the ground, not necessarily unit; zero to stand still) facing `yaw`. */
+  update(dt: number, dir: Vec3, yaw: number): void {
+    this.yaw = yaw;
     const len = Math.hypot(dir[0], dir[2]);
+    const x0 = this.position[0];
+    const z0 = this.position[2];
     if (len > 1e-4) {
-      const nx = dir[0] / len;
-      const nz = dir[2] / len;
       const step = this.speed * Math.min(1, len) * dt;
-      const margin = 1;
-      this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, this.position[0] + nx * step));
-      this.position[2] = Math.min(this.ground.size - margin, Math.max(margin, this.position[2] + nz * step));
-      // Turn toward the walk direction the short way round.
-      const want = Math.atan2(nx, nz);
-      let d = want - this.yaw;
-      d = Math.atan2(Math.sin(d), Math.cos(d));
-      this.yaw += d * Math.min(1, this.turnRate * dt);
+      const margin = 1.5;
+      this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, x0 + (dir[0] / len) * step));
+      this.position[2] = Math.min(this.ground.size - margin, Math.max(margin, z0 + (dir[2] / len) * step));
     }
     this.position[1] = this.ground.heightAt(this.position[0], this.position[2]);
-    this.pose();
-  }
-
-  private pose(): void {
-    translation(this.position[0], this.position[1], this.position[2], this.tmpT);
-    rotationY(this.yaw, this.tmpR);
-    multiply(this.tmpT, this.tmpR, this.model);
+    if (dt > 0) {
+      this.velocity[0] = (this.position[0] - x0) / dt;
+      this.velocity[2] = (this.position[2] - z0) / dt;
+    }
+    this.crab.update(dt, this.position, this.yaw, this.velocity);
   }
 }

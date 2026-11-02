@@ -7,7 +7,7 @@ bolted on to make a fighting platform. Built in TypeScript on the
 ## Running
 ```bash
 npm install          # installs gridfall-engine from GitHub at the tag in package.json and builds it
-npm run dev          # http://localhost:5182 · WASD to walk, drag to look, wheel to zoom
+npm run dev          # http://localhost:5182 · mouse to aim, WASD to scuttle, wheel to zoom, click to capture the mouse
 npm run dev:engine   # the same on ../gridfall-engine's source, for engine work in progress
 npm run typecheck
 npm run build
@@ -24,4 +24,5 @@ built, `npm run dev:engine` runs this game on the sibling checkout's source so i
 - `src/main.ts`: the scene, input and the frame loop.
 - `src/camera.ts`: the third-person follow camera.
 - `src/ground.ts`: the sand (the engine's terrain, flat for now).
-- `src/player.ts`: the crab, a box for now.
+- `src/player.ts`: the player's position, facing and velocity.
+- `src/crab.ts`: the crab, built from code, with IK legs that step on their own.

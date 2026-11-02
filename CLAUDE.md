@@ -20,11 +20,20 @@ npm run build        # typecheck + vite build
 
 ## Layout
 ```
-src/main.ts     bootstrap: scene, input, the frame
+src/main.ts     bootstrap: scene, input (mouse aims with no button held, pointer lock when allowed; WASD
+                scuttles relative to the camera, sideways as readily as forward), the frame
 src/camera.ts   ThirdPersonCamera (the engine's CameraLike: eye / view / projection / target / distance)
 src/ground.ts   the sand the crab walks on (engine terrain, flat for now)
-src/player.ts   the crab: position, facing, walking; a box until it has a model
+src/player.ts   the player: position, facing (always the camera's yaw), velocity; drives the crab
+src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
+                procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
 ```
+
+## Game feel decided so far
+- Mouse is aim: the crab faces where the camera looks; there is no click-to-turn. Keys move relative
+  to the camera (W/S along the look, A/D across it); the crab does not turn to face its walk direction.
+- The shell is the build site for the weapon platform; its spire curls up and to the crab's right.
+- Crab body space (`src/crab.ts`): the crab faces +z and +x is its LEFT (right-handed, +y up).
 
 ## Rules
 - Engine work (new rendering features, fixes) goes in `../gridfall-engine` on a `feature/*` branch
