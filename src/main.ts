@@ -7,6 +7,7 @@ import { GamepadInput } from './gamepad';
 import { buildGround } from './ground';
 import { World, wreckFx } from './impacts';
 import { LifeBars } from './lifebars';
+import { Hell, hellBuild } from './hell';
 import { installLook } from './look';
 import { Loot } from './loot';
 import { loadMap } from './map';
@@ -41,7 +42,10 @@ const ground = buildGround(renderer, map);
 const mist = new MistSet(renderer, map.mist);
 const camera = new ThirdPersonCamera();
 camera.groundHeight = (x, z) => ground.heightAt(x, z);
-const build = loadBuild();
+// The mode: the battle (the saved battle shell, three opponents, weapons to collect) or Bullet Hell (?mode=hell:
+// one machine gun, power-ups off cracked opponents, more and more of them; see hell.ts).
+const HELL = new URLSearchParams(location.search).get('mode') === 'hell';
+const build = HELL ? hellBuild() : loadBuild();
 const shell = shellType(build.shell);
 const player = new Player(renderer, ground, [map.spawn[0], 0, map.spawn[1]], shell, build.claws);
 // What comes off any shell lies on the sand: weapons to pick up, rubble for a while.
@@ -56,13 +60,15 @@ const world = new World((x, z) => ground.heightAt(x, z));
 const props = new Props(renderer, (x, z) => ground.heightAt(x, z), map.props);
 world.obstacles.push(...props.obstacles());
 player.blockers = world.obstacles;
-const arsenal = new Arsenal(renderer, structure, world, player);
+const arsenal = new Arsenal(renderer, structure, world, player, 1, HELL);
+structure.invulnerable = HELL;
 camera.follow = player.position;
 camera.target = [player.position[0], player.position[1] + camera.height, player.position[2]];
 
 // ---------- opponents: three on the beach at a time, each with its own shell and build; a cracked one is replaced
 
 const ENEMIES = 3;
+const RESPAWN = HELL ? 2.5 : 4;
 const enemies: Enemy[] = [];
 let respawnIn = 0;
 function spawnPoint(): Vec3 {
@@ -125,6 +131,20 @@ function actions(): Action[] {
 const PAD_LABELS = ['LB', 'RB', 'LT', 'RT'];
 let action = 0;
 function showActions(): void {
+  if (hell) {
+    // Bullet Hell: the two guns and their stages.
+    const l = hell.labels();
+    const pad = gamepad.connected;
+    actionBar.replaceChildren(
+      ...[[pad ? 'RT' : 'LMB', l.primary, true], [pad ? 'LT' : 'RMB', l.secondary, hell.secondary >= 0]].map(([key, text, on]) => {
+        const el = document.createElement('span');
+        el.className = `action${on ? ' on' : ' empty'}`;
+        el.innerHTML = `<b>${key}</b> ${text}`;
+        return el;
+      }),
+    );
+    return;
+  }
   const list = actions();
   actionBar.replaceChildren(
     ...list.map((a, i) => {
@@ -147,12 +167,16 @@ function setAction(i: number): void {
   arsenal.selected = a.kind === 'weapon' ? structure.weapons.indexOf(a.m) : -1;
   showActions();
 }
+const hell = HELL ? new Hell(arsenal, structure) : null;
 setAction(0);
+let pieceCount = structure.alivePieces.length;
 structure.onChange = () => {
   weigh();
   if (action >= actions().length) setAction(0);
   else setAction(action);
-  say('A piece came off!');
+  const n = structure.alivePieces.length;
+  if (n < pieceCount) say('A piece came off!');
+  pieceCount = n;
 };
 
 /** A nip: the claws reach a little way in front, and whoever (or whatever piece) is there takes it, by the claws worn. */
@@ -232,8 +256,10 @@ const locked = () => document.pointerLockElement === canvas;
 const THIRD = 'mouse to look · 1-4 pick an action, left button fires, right button aims · WASD to walk · Shift to run · Space to jump · Tab for settings · C for topdown';
 const TOP = 'mouse to aim · 1-4 pick an action, left button fires, right button zooms · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person';
 const PAD = 'gamepad: left stick moves, right stick faces, LB / RB / LT / RT fire the slots, press the left stick to run, A jumps';
+const HELL_TOP = 'mouse to aim · left button fires, right button fires the secondary · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person · power-ups drop where crabs crack';
 function showHint(): void {
-  if (controls.topDown) hint.textContent = TOP;
+  if (HELL && controls.topDown) hint.textContent = HELL_TOP;
+  else if (controls.topDown) hint.textContent = TOP;
   else hint.textContent = `${THIRD} · ${locked() ? 'Esc to release the mouse' : 'click to capture the mouse'}`;
   if (gamepad.connected) hint.textContent += ` · ${PAD}`;
 }
@@ -261,14 +287,24 @@ window.addEventListener('click', capture);
 window.addEventListener('mousedown', (e) => {
   if (overPanel(e) || (e.target instanceof Element && e.target.closest('a')) || !player.alive) return;
   if (e.button === 0) {
-    if (actions()[action]?.kind === 'claws') nip();
+    if (hell) hell.firePrimary(true);
+    else if (actions()[action]?.kind === 'claws') nip();
     else arsenal.trigger(true);
   }
-  if (e.button === 2) camera.aimZoom = 1;
+  if (e.button === 2) {
+    if (hell) hell.fireSecondary(true);
+    else camera.aimZoom = 1;
+  }
 });
 window.addEventListener('mouseup', (e) => {
-  if (e.button === 0) arsenal.trigger(false);
-  if (e.button === 2) camera.aimZoom = 0;
+  if (e.button === 0) {
+    if (hell) hell.firePrimary(false);
+    else arsenal.trigger(false);
+  }
+  if (e.button === 2) {
+    if (hell) hell.fireSecondary(false);
+    else camera.aimZoom = 0;
+  }
 });
 window.addEventListener('contextmenu', (e) => {
   if (!overPanel(e)) e.preventDefault();
@@ -322,7 +358,10 @@ function frame(now: number): void {
     }
     intent.run = intent.run || pad.run;
     intent.jump = intent.jump || pad.jump;
-    for (let i = 0; i < 4; i++) fireAction(i, pad.fire[i]);
+    if (hell) {
+      hell.firePrimary(pad.fire[3] || pad.fire[1]);
+      hell.fireSecondary(pad.fire[2] || pad.fire[0]);
+    } else for (let i = 0; i < 4; i++) fireAction(i, pad.fire[i]);
   }
   if (player.alive) player.update(dt, intent.dir, intent.faceYaw, intent.faceAlways, intent.run, intent.jump);
   else {
@@ -330,6 +369,7 @@ function frame(now: number): void {
     if (deadFor === 0) {
       arsenal.releaseAll();
       cracked.hidden = false;
+      if (hell) say(hell.reset());
     }
     player.update(dt, [0, 0, 0], player.yaw, false);
     const was = deadFor;
@@ -367,6 +407,8 @@ function frame(now: number): void {
     } else if (kind === 'health') {
       player.health = Math.min(player.maxHealth, player.health + player.maxHealth / 2);
       say('Patched up!');
+    } else if (kind === 'power') {
+      if (hell) say(hell.powerUp());
     } else {
       player.invincibleFor = 8;
       say('Starfish! Nothing can hurt you for 8 seconds');
@@ -375,11 +417,11 @@ function frame(now: number): void {
   });
   // Loose weapons: walk over one with a slot free (and a cell for it) and it is yours, with a full load.
   const refused = loot.update(dt, player.alive ? player.position : null, 1.4, (kind) => {
-    if (!structure.pickUp(kind)) return false;
+    if (hell || !structure.pickUp(kind)) return false;
     say(`Picked up a ${pieceType(kind).name.toLowerCase()}`);
     return true;
   });
-  if (refused && noticeFor <= 0) say(`${structure.weapons.length >= maxWeapons(build.claws) ? 'No slot free' : 'No room on the deck'} for the ${pieceType(refused).name.toLowerCase()}`);
+  if (refused && !hell && noticeFor <= 0) say(`${structure.weapons.length >= maxWeapons(build.claws) ? 'No slot free' : 'No room on the deck'} for the ${pieceType(refused).name.toLowerCase()}`);
   if (noticeFor > 0) {
     noticeFor -= dt;
     if (noticeFor <= 0) notice.hidden = true;
@@ -389,20 +431,23 @@ function frame(now: number): void {
   for (const e of enemies) e.update(dt, player.alive ? player : null);
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].gone) {
+      const at = enemies[i].position;
       enemies.splice(i, 1);
       kills++;
-      respawnIn = 4;
+      respawnIn = RESPAWN;
+      // Bullet Hell: now and then a cracked crab leaves a power-up where it fell.
+      if (hell && hell.onKill()) pickups.place('power', hell.dropAt(at));
     }
   }
   // The lights of the fight: muzzle flashes, flame, rockets and their pops, burning pieces.
   renderer.lights.lights.length = 0;
-  renderer.lights.lights.push(...arsenal.lights(dt), ...structure.lights(), ...enemies.flatMap((e) => e.lights(dt)), ...loot.lights());
+  renderer.lights.lights.push(...arsenal.lights(dt), ...structure.lights(), ...enemies.flatMap((e) => e.lights(dt)), ...loot.lights(), ...pickups.lights());
   if (renderer.lights.lights.length > 48) renderer.lights.lights.length = 48;
-  if (enemies.length < ENEMIES) {
+  if (enemies.length < (hell ? hell.wantEnemies() : ENEMIES)) {
     respawnIn -= dt;
     if (respawnIn <= 0) {
       enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot));
-      respawnIn = 4;
+      respawnIn = RESPAWN;
     }
   }
   lifeBars.update(camera, canvas, player, enemies, player.stamina, player.winded);
@@ -421,4 +466,4 @@ function frame(now: number): void {
 }
 requestAnimationFrame(frame);
 // A handle on the game for the browser console (poking at the player, the enemies, the lights).
-(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera, loot };
+(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera, loot, hell, pickups };

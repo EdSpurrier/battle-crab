@@ -253,7 +253,7 @@ function buildPanel(): void {
   for (const p of PIECES) {
     const b = document.createElement('button');
     b.type = 'button';
-    b.textContent = `${p.key} ${p.name}`;
+    b.textContent = `${p.key.toUpperCase()} ${p.name}`;
     b.title = p.blurb;
     b.classList.toggle('on', p.kind === piece);
     b.addEventListener('click', () => setPiece(p.kind));

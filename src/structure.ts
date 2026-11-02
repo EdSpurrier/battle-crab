@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, scaling, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { shatter, type Obstacle } from './impacts';
 import type { Loot } from './loot';
 import { CELL, MATERIALS, burns, canPlace, cellCentre, maxWeapons, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type PieceKind, type ShellBuild, type ShellType } from './shell';
@@ -18,6 +18,10 @@ const ELEVATE: [number, number] = [(-20 * Math.PI) / 180, (60 * Math.PI) / 180];
 const TURN_RATE = 9;
 /** A cannonball's speed: the barrel's elevation is solved so the ball comes down on the aim point. */
 export const CANNON_SPEED = 20;
+/** A grenade's: slower, so it goes up and comes down on the aim point. */
+export const GRENADE_SPEED = 15;
+/** What a weapon lobs at, by kind (anything else shoots straight). */
+export const LOB_SPEED: Partial<Record<Piece['kind'], number>> = { cannon: CANNON_SPEED, spikeball: CANNON_SPEED, grenade: GRENADE_SPEED };
 const GRAVITY = 20;
 /** The knocker's chain (cell units, before the weapon scale) and the ball on its end. */
 const CHAIN = 0.55;
@@ -165,6 +169,14 @@ function shapeOf(piece: Piece): Shape {
         pivot: [0, -H + 0.16, 0],
         muzzle: [0, -H + 0.16, 0.28],
       };
+    case 'grenade':
+      // A short fat tube on a squat mount, a drum magazine under it, a sight on top.
+      return {
+        fixed: merge([box(-0.1, -H, -0.09, 0.1, -H + 0.07, 0.09, WOOD_DARK), box(-0.04, -H, -0.04, 0.04, 0.0, 0.04, IRON)]),
+        moving: merge([box(-0.06, -0.06, -0.08, 0.06, 0.06, 0.2, IRON), box(-0.075, -0.075, 0.17, 0.075, 0.075, 0.24, IRON_LIGHT), ellipsoid(0, -0.1, 0.02, 0.07, 0.07, 0.07, IRON_LIGHT, 10, 6), box(-0.01, 0.06, 0.05, 0.01, 0.1, 0.09, BRASS)]),
+        pivot: [0, 0.0, 0],
+        muzzle: [0, 0.0, 0.26],
+      };
     case 'fireworks':
       // A rack of tubes, tilted up.
       return {
@@ -196,6 +208,8 @@ export interface Mounted {
   direction: Vec3;
   /** The chain's length in the world (the knocker). */
   chainLength: number;
+  /** How much bigger than built the gun is drawn (Bullet Hell power-ups). */
+  grow: number;
 }
 
 /** A piece of a structure as something a shot can hit. */
@@ -265,7 +279,7 @@ export class Structure {
         part.moving = { instance: mi, kind: piece.kind };
       }
       if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < maxWeapons(build.claws)) {
-        const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, anchor: [0, 0, 0], muzzle: [0, 0, 0], direction: [0, 0, 1], chainLength: (CHAIN + BALL * 0.6) * WEAPON_SCALE };
+        const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, anchor: [0, 0, 0], muzzle: [0, 0, 0], direction: [0, 0, 1], chainLength: (CHAIN + BALL * 0.6) * WEAPON_SCALE, grow: 1 };
         this.weapons.push(weapon);
         const p = shape.pivot;
         const mz = shape.muzzle;
@@ -335,10 +349,13 @@ export class Structure {
     return out;
   }
 
+  /** Nothing comes off this shell (the player's in Bullet Hell: the run must not lose its only gun). */
+  invulnerable = false;
+
   /** Take `amount` off piece `i`; at nothing it is gone, and whatever it held up falls. */
   damage(i: number, amount: number): void {
     const part = this.parts[i];
-    if (!part || part.dead) return;
+    if (!part || part.dead || this.invulnerable) return;
     part.hp -= amount;
     if (part.hp > 0) return;
     this.drop(i);
@@ -466,8 +483,9 @@ export class Structure {
         const dy = ly - (t.cell[1] + t.pivot[1]);
         let pitch = Math.atan2(dy, D);
         w.inRange = true;
-        if (w.piece.kind === 'cannon' || w.piece.kind === 'spikeball') {
-          const v2 = CANNON_SPEED * CANNON_SPEED;
+        const lob = LOB_SPEED[w.piece.kind];
+        if (lob) {
+          const v2 = lob * lob;
           const disc = v2 * v2 - GRAVITY * (GRAVITY * D * D + 2 * dy * v2);
           if (disc >= 0) pitch = Math.atan((v2 - Math.sqrt(disc)) / (GRAVITY * D));
           else {
@@ -505,7 +523,7 @@ export class Structure {
         continue;
       }
       multiply(multiply(part.instance.model, translation(t.pivot[0], t.pivot[1], t.pivot[2], this.tmp), this.tmp2), rotationX(-w.aimPitch, this.tmp3), this.barrel);
-      const mz = transformPoint(this.barrel, t.muzzleRel);
+      const mz = transformPoint(this.barrel, w.grow === 1 ? t.muzzleRel : [t.muzzleRel[0] * w.grow, t.muzzleRel[1] * w.grow, t.muzzleRel[2] * w.grow]);
       w.muzzle = [mz[0], mz[1], mz[2]];
       const dl = Math.hypot(this.barrel[8], this.barrel[9], this.barrel[10]) || 1;
       w.direction = [this.barrel[8] / dl, this.barrel[9] / dl, this.barrel[10] / dl];
@@ -518,6 +536,7 @@ export class Structure {
         default:
           motion = translation(0, 0, -w.kick * 0.09 * WEAPON_SCALE, this.tmp);
       }
+      if (w.grow !== 1) motion = multiply(motion, scaling(w.grow, w.grow, w.grow));
       multiply(this.barrel, motion, part.moving.instance.model);
     }
   }
