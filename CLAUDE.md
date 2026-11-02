@@ -36,7 +36,7 @@ src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down 
                 beach-wide layer), start; the tool's options beside the toolbar (rebuilt per tool); the chosen
                 bank's controls on the right; saves as you go; Download / Load / New in the toolbar
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
-src/controls.ts the two control schemes (settings or C): "3rd person" (mouse orbits, pointer lock) and "topdown"
+src/controls.ts the two control schemes (settings or C), topdown the default: "3rd person" (mouse orbits, pointer lock) and "topdown"
                 (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;
                 Q/E turn); the third-person camera's settings are kept while in top down
 src/pick.ts     pickGround: the ground point under a screen position (ray march + bisection on the heightfield)
