@@ -25,7 +25,7 @@ src/main.ts     bootstrap: scene, input (mouse orbits with no button held, point
                 relative to the camera), the frame
 src/camera.ts   ThirdPersonCamera (the engine's CameraLike: eye / view / projection / target / distance)
 src/ground.ts   the sand the crab walks on (engine terrain, flat for now)
-src/player.ts   the player: position, facing (turns toward the walk direction), velocity; drives the crab
+src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
 src/settings.ts SettingsPanel: sections of toggles / sliders / choices on live getters and setters, kept in localStorage
@@ -40,8 +40,9 @@ The build runs locally, so the private engine needs no token in CI.
 
 ## Game feel decided so far
 - The mouse orbits the camera with no button held (pointer lock on any click, Esc releases). A
-  standing crab does not turn with the camera (you can look at its face). Keys move relative to the
-  camera (W/S along the look, A/D across it) and the crab turns, eased, to face the way it walks.
+  standing crab does not turn with the camera (you can look at its face). While any key is held the
+  crab turns, eased, to face the camera's way and moves relative to it: W/S forward and back along
+  the look, A/D a sidestep across it (it does not turn to face a sidestep or a back-pedal).
 - The shell is the build site for the weapon platform; its spire curls up and to the crab's right.
 - Crab body space (`src/crab.ts`): the crab faces +z and +x is its LEFT (right-handed, +y up).
 

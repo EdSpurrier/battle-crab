@@ -7,8 +7,8 @@ import { Player } from './player';
 /**
  * Battle Crab, first light: a sandy ground, the crab, a third-person camera orbiting it.
  * Click anywhere to take the mouse (Esc gives it back); the mouse orbits the camera round the
- * crab, WASD walks relative to the camera and the crab turns to face the way it walks, the wheel
- * zooms, Tab opens the settings.
+ * crab; W/S walk forward and back along the look and A/D sidestep across it, the crab facing the
+ * camera's way while it moves; the wheel zooms, Tab opens the settings.
  */
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 const stats = document.getElementById('stats')!;
@@ -108,7 +108,7 @@ let fpsAt = last;
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  player.update(dt, walkDirection());
+  player.update(dt, walkDirection(), camera.yaw);
   camera.update(dt);
   look.update();
   renderer.time = now / 1000;
