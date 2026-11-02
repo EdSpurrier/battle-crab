@@ -33,10 +33,15 @@ const STEP_LEAD_MAX = 0.75;
  * then back. How long the whole takes, how far the claw reaches forward, the jaw's angles at rest and
  * at its widest (radians).
  */
-const SNAP_SECONDS = 0.5;
+const SNAP_SECONDS = 0.32;
 const SNAP_REACH = 0.7;
 const JAW_OPEN = 0.45;
 const JAW_WIDE = 0.95;
+/** Landing: falling with the ground this close below, the feet reach down for their spots; on touchdown the body dips this much over this long. */
+const LAND_REACH = 1.3;
+const LAND_SQUASH = 0.14;
+const LAND_SECONDS = 0.22;
+const MOUTH: Vec = [0.08, 0.02, 0.02];
 /** A planted foot further from its hip than this share of the leg's reach slides along, rather than stretch back to where it was. */
 const REACH_KEEP = 0.93;
 /** A group may start stepping once the other group's step is this far along (a quicker cadence at speed than waiting for it to land). */
@@ -273,16 +278,27 @@ interface Claw {
   snap: number;
 }
 
-/** Where a nip is at `t` (0..1): how far the claw has reached out (0..1) and how far open the jaw is (radians). */
+/**
+ * Where a nip is at `t` (0..1): how far the claw has reached out (0..1, overshooting a little) and
+ * how far open the jaw is (radians). A flung reach that overshoots and settles, a snap shut, a small
+ * bounce of the jaw off the bite, and an easy return.
+ */
 function nip(t: number): { reach: number; open: number } {
-  const ease = (k: number) => k * k * (3 - 2 * k);
-  if (t < 0.45) {
-    const e = ease(t / 0.45);
-    return { reach: e, open: JAW_OPEN + (JAW_WIDE - JAW_OPEN) * e };
+  const smooth = (k: number) => k * k * (3 - 2 * k);
+  const fling = (k: number) => 1 + 2.4 * Math.pow(k - 1, 3) + 1.4 * Math.pow(k - 1, 2); // ease out with overshoot
+  if (t < 0.34) {
+    const k = t / 0.34;
+    return { reach: fling(k), open: JAW_OPEN + (JAW_WIDE - JAW_OPEN) * Math.min(1, 1.15 * Math.sqrt(k)) };
   }
-  if (t < 0.56) return { reach: 1, open: JAW_WIDE * (1 - (t - 0.45) / 0.11) };
-  if (t < 0.7) return { reach: 1, open: 0 };
-  const e = ease((t - 0.7) / 0.3);
+  if (t < 0.42) {
+    const k = (t - 0.34) / 0.08;
+    return { reach: 1 + 0.08 * (1 - k), open: JAW_WIDE * (1 - k * k) };
+  }
+  if (t < 0.52) {
+    const k = (t - 0.42) / 0.1;
+    return { reach: 1, open: 0.18 * Math.sin(k * Math.PI) };
+  }
+  const e = smooth((t - 0.52) / 0.48);
   return { reach: 1 - e, open: JAW_OPEN * e };
 }
 
@@ -319,6 +335,9 @@ export class Crab {
   /** A blink in progress, 0..1 (-1: none), and the time to the next. */
   private blink = -1;
   private blinkIn = 1.2;
+  /** Whether it was in the air last frame, and a landing squash in progress (0..1, -1: none). */
+  private wasAirborne = false;
+  private landing = -1;
 
   constructor(renderer: Renderer, ground: GroundHeight, at: Vec3, yaw: number) {
     this.ground = ground;
@@ -334,8 +353,9 @@ export class Crab {
       renderer.instances.push({ mesh: new Mesh(gl, data), model: this.bodyModel, material: mat });
     };
 
-    // The body (what shows in front of the shell), the shell and its two spiral whorls curling up and back.
+    // The body (what shows in front of the shell), a tiny mouth at its front, the shell and its two spiral whorls curling up and back.
     fixed(ellipsoid(0, 0, 0.1, 0.5, 0.2, 0.42, BODY));
+    fixed(ellipsoid(0, -0.04, 0.535, 0.06, 0.024, 0.03, MOUTH, 10, 5));
     // The spire curls up, back and to the crab's right, the way a hermit crab carries its shell.
     fixed(ellipsoid(0, 0.3, -0.3, 0.62, 0.52, 0.75, SHELL, 14, 8), shellSkin);
     fixed(ellipsoid(-0.3, 0.62, -0.75, 0.4, 0.36, 0.42, SHELL_LIGHT, 12, 6), shellSkin);
@@ -473,15 +493,28 @@ export class Crab {
     }
 
     if (airborne) {
-      // Feet drawn in under the body, no stepping; on landing they are near their spots and the gait takes over.
-      const k = 1 - Math.exp(-14 * dt);
+      // Going up, the feet draw in under the body; coming down with the ground near, they reach for
+      // their spots so they are planted before the body arrives. No stepping either way.
+      const falling = velocity[1] < 0 && at[1] - this.ground(at[0], at[2]) < LAND_REACH;
+      const k = 1 - Math.exp(-(falling ? 18 : 14) * dt);
       for (const leg of this.legs) {
         leg.t = -1;
-        const tuck = toWorld([leg.hip[0] + (leg.rest[0] - leg.hip[0]) * TUCK, -TUCK_DROP, leg.hip[2] + (leg.rest[2] - leg.hip[2]) * TUCK], this.centre, yaw);
-        leg.foot = mix(leg.foot, tuck, k);
+        const want = falling ? this.restSpot(leg, yaw, velocity) : toWorld([leg.hip[0] + (leg.rest[0] - leg.hip[0]) * TUCK, -TUCK_DROP, leg.hip[2] + (leg.rest[2] - leg.hip[2]) * TUCK], this.centre, yaw);
+        leg.foot = mix(leg.foot, want, k);
       }
+      this.wasAirborne = true;
       this.pose(yaw, speed);
       return;
+    }
+    if (this.wasAirborne) {
+      this.wasAirborne = false;
+      this.landing = 0;
+      for (const leg of this.legs) leg.foot[1] = this.ground(leg.foot[0], leg.foot[2]);
+    }
+    if (this.landing >= 0) {
+      this.landing += dt / LAND_SECONDS;
+      if (this.landing >= 1) this.landing = -1;
+      else this.centre[1] -= LAND_SQUASH * Math.sin(this.landing * Math.PI);
     }
 
     // Which group of legs may step: one group at a time, the next allowed to start once the first
