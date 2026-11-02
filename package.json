@@ -10,7 +10,9 @@
     "dev:engine": "cross-env-shell ENGINE_SOURCE=1 vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "build:pages": "tsc --noEmit && vite build --base=/battle-crab/",
+    "deploy": "npm run build:pages && gh-pages -d dist -b gh-pages --nojekyll -m \"Deploy to GitHub Pages\""
   },
   "dependencies": {
     "gridfall-engine": "github:EdSpurrier/gridfall-engine#v0.76.0"
@@ -19,6 +21,7 @@
     "@types/node": "^22.10.0",
     "cross-env": "^7.0.3",
     "typescript": "^5.6.3",
-    "vite": "^6.0.1"
+    "vite": "^6.0.1",
+    "gh-pages": "^6.3.0"
   }
 }

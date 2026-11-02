@@ -7,11 +7,20 @@ bolted on to make a fighting platform. Built in TypeScript on the
 ## Running
 ```bash
 npm install          # installs gridfall-engine from GitHub at the tag in package.json and builds it
-npm run dev          # http://localhost:5182 · mouse to aim, WASD to scuttle, wheel to zoom, click to capture the mouse
+npm run dev          # http://localhost:5182 · mouse to look, WASD to walk, wheel to zoom, click to capture the mouse (Esc releases)
 npm run dev:engine   # the same on ../gridfall-engine's source, for engine work in progress
 npm run typecheck
 npm run build
+npm run deploy       # build for GitHub Pages and push dist/ to the gh-pages branch
 ```
+
+Tab opens the settings: camera projection (perspective / orthographic), field of view, depth of field
+(focused on the crab or by hand), distance fog, volumetric haze and light shafts, mist banks. Settings
+are kept in the browser between visits.
+
+## Playing it online
+`npm run deploy` publishes the current build to GitHub Pages at https://edspurrier.github.io/battle-crab/
+(the `gh-pages` branch). The build is made locally, so nothing in CI needs access to the private engine.
 
 ## The engine
 The engine is one shared repo, not a fork per game. Battle Crab pins a release
@@ -26,3 +35,4 @@ built, `npm run dev:engine` runs this game on the sibling checkout's source so i
 - `src/ground.ts`: the sand (the engine's terrain, flat for now).
 - `src/player.ts`: the player's position, facing and velocity.
 - `src/crab.ts`: the crab, built from code, with IK legs that step on their own.
+- `src/look.ts` and `src/settings.ts`: the settings panel and what it controls.
