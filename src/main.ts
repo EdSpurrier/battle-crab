@@ -2,24 +2,29 @@ import { Mesh, Renderer, box, material, multiply, rotationY, translation, type V
 import { ThirdPersonCamera } from './camera';
 import { buildGround } from './ground';
 import { installLook } from './look';
+import { loadMap } from './map';
+import { MistSet } from './mist';
 import { Player } from './player';
 
 /**
- * Battle Crab, first light: a sandy ground, the crab, a third-person camera orbiting it.
- * Click anywhere to take the mouse (Esc gives it back); the mouse orbits the camera round the
- * crab; W/S walk forward and back along the look and A/D sidestep across it, the crab facing the
- * camera's way while it moves; the wheel zooms, Tab opens the settings.
+ * Battle Crab, first light: the beach from the map (the one last saved in the map maker, or the
+ * default), the crab, a third-person camera orbiting it. Click anywhere to take the mouse (Esc
+ * gives it back); the mouse orbits the camera round the crab; W/S walk forward and back along the
+ * look and A/D sidestep across it, the crab facing the camera's way while it moves; the wheel
+ * zooms, Tab opens the settings.
  */
 const canvas = document.getElementById('gl') as HTMLCanvasElement;
 const stats = document.getElementById('stats')!;
 const hint = document.getElementById('hint')!;
 const renderer = new Renderer(canvas);
 
-const SIZE = 64;
-const ground = buildGround(renderer, SIZE);
+const map = loadMap();
+const SIZE = map.size;
+const ground = buildGround(renderer, map);
+const mist = new MistSet(renderer, map.mist);
 const camera = new ThirdPersonCamera();
 camera.groundHeight = (x, z) => ground.heightAt(x, z);
-const player = new Player(renderer, ground, [SIZE / 2, 0, SIZE / 2]);
+const player = new Player(renderer, ground, [map.spawn[0], 0, map.spawn[1]]);
 camera.follow = player.position;
 camera.target = [player.position[0], player.position[1] + camera.height, player.position[2]];
 
@@ -30,7 +35,7 @@ const rockMaterial = material({ roughness: 0.9 });
 for (let i = 0; i < 24; i++) {
   const x = 4 + rand() * (SIZE - 8);
   const z = 4 + rand() * (SIZE - 8);
-  if (Math.hypot(x - SIZE / 2, z - SIZE / 2) < 4) continue;
+  if (Math.hypot(x - map.spawn[0], z - map.spawn[1]) < 4) continue;
   const w = 0.6 + rand() * 1.4;
   const h = 0.5 + rand() * 1.2;
   const d = 0.6 + rand() * 1.4;
@@ -42,13 +47,13 @@ for (let i = 0; i < 24; i++) {
 // Light and look: the sky model's sun, held at mid-morning (the clock does not run yet); the settings panel (Tab).
 renderer.dayNight.enabled = true;
 renderer.timeOfDay = 0.3;
-const look = installLook(document.body, renderer, camera, SIZE);
+const look = installLook(document.body, renderer, camera, mist);
 look.panel.onToggle = (open) => {
   if (open && locked()) document.exitPointerLock();
   keys.clear();
 };
 
-// ---------- input: the mouse aims once the canvas has it (pointer lock), keys scuttle
+// ---------- input: the mouse orbits once it moves, keys walk
 
 const LOOK_SPEED = 0.0022;
 const keys = new Set<string>();
@@ -72,7 +77,7 @@ const locked = () => document.pointerLockElement === canvas;
 const CONTROLS = 'mouse to look · WASD to walk · wheel to zoom · Tab for settings';
 hint.textContent = `${CONTROLS} · click to capture the mouse`;
 function capture(e: Event): void {
-  if (locked() || look.panel.open || (e.target instanceof Element && e.target.closest('.settings'))) return;
+  if (locked() || look.panel.open || (e.target instanceof Element && e.target.closest('.settings, a'))) return;
   const asked = canvas.requestPointerLock() as unknown;
   if (asked instanceof Promise) {
     asked.catch((err: unknown) => {
