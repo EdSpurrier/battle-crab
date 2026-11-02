@@ -81,7 +81,8 @@ export const AMMO: Record<PieceKind, number> = { plank: 0, beam: 0, joint: 0, ca
 /** The spiky ball: how fast it leaves, how far its chain reaches, how fast it is reeled in. */
 const SPIKE_SPEED = 22;
 const CHAIN_REACH = 14;
-const REEL_SPEED = 20;
+/** How fast the drum winds the chain in (units of chain a second); the ball is dragged along on its end. */
+const WINCH_SPEED = 8;
 /** The knocker: links in its chain, how long hauling it right back takes, the swing a full haul gives on release, how fast the ball must go to hurt, the speed at which it does all it can. */
 const KNOCK_LINKS = 12;
 const KNOCK_DRAW_SECONDS = 0.5;
@@ -134,11 +135,13 @@ export class Arsenal {
     return links;
   }
 
-  /** Pose a chain's links along a rope, each turned a quarter from the last so they read as a chain. */
+  /** Pose a chain's links along a rope, each turned a quarter from the last so they read as a chain; links wound onto the drum are hidden. */
   private poseLinks(links: Instance[], rope: Rope): void {
+    const wound = Math.floor(rope.wound);
     for (let i = 0; i < links.length; i++) {
       const link = links[i];
-      link.hidden = false;
+      link.hidden = i < wound;
+      if (link.hidden) continue;
       alongMatrix(this.tmpA, rope.pts[i], rope.pts[i + 1]);
       multiply(this.tmpA, rotationY((i % 2) * Math.PI * 0.5, this.tmpB), link.model as Float32Array);
     }
@@ -227,7 +230,7 @@ export class Arsenal {
           if (pulled && cool <= 0 && this.spend(w, 1)) {
             this.cooldown.set(w, 1);
             w.kick = 1;
-            this.flash(muzzle, [1, 0.75, 0.35], 0.12, 8, 70);
+            this.flash(muzzle, [1, 0.75, 0.35], 0.12, 8, 40);
             this.ball(muzzle, [facing[0] * CANNON_SPEED, facing[1] * CANNON_SPEED, facing[2] * CANNON_SPEED]);
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 18, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 6, dir: facing, cone: 0.35, life: 0.2, size: 0.2, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 30, color: [0.55, 0.55, 0.55], colorTo: [0.3, 0.3, 0.3], speed: 3, dir: facing, cone: 0.5, up: 0.6, life: 1.8, size: 0.35, drag: 1.2, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
@@ -402,9 +405,12 @@ export class Arsenal {
         t.rope.reset(muzzle, muzzle);
         t.ball.hidden = false;
         w.kick = 1;
-        this.flash(muzzle, [1, 0.75, 0.35], 0.1, 6, 45);
+        this.flash(muzzle, [1, 0.75, 0.35], 0.1, 6, 30);
         this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 14, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 5, dir: facing, cone: 0.35, life: 0.18, size: 0.16, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
-      } else if (t.phase === 'flying' || t.phase === 'landed') t.phase = 'reeling';
+      } else if (t.phase === 'flying' || t.phase === 'landed') {
+        t.phase = 'reeling';
+        t.resting = false;
+      }
     }
     t.hitCool = Math.max(0, t.hitCool - dt);
     if (t.phase === 'flying') {
@@ -445,29 +451,35 @@ export class Arsenal {
         } else t.pos = next;
       }
     } else if (t.phase === 'reeling') {
-      const d: Vec3 = [muzzle[0] - t.pos[0], muzzle[1] - t.pos[1], muzzle[2] - t.pos[2]];
-      const l = Math.hypot(d[0], d[1], d[2]);
-      if (l < 0.6) {
+      // The drum winds the chain in link by link; the ball is the chain's free end, dragged along behind it
+      // over the sand (scuffing up dust) and round whatever is in the way, until it is home.
+      t.rope.wound = Math.min(SPIKE_LINKS, t.rope.wound + (WINCH_SPEED * dt) / t.rope.seg);
+      const was: Vec3 = [t.pos[0], t.pos[1], t.pos[2]];
+      const onGround = t.pos[1] <= this.world.heightAt(t.pos[0], t.pos[2]) + 0.26;
+      t.rope.step(dt, muzzle, null, null, 0.8, onGround ? 5 : 0.3);
+      const e = t.rope.end;
+      const floor = this.world.heightAt(e[0], e[2]) + 0.2;
+      if (e[1] < floor) e[1] = floor;
+      t.pos = [e[0], e[1], e[2]];
+      const moved = Math.hypot(t.pos[0] - was[0], t.pos[2] - was[2]);
+      if (onGround && moved > 1.5 * dt && Math.random() < dt * 30) this.renderer.particles.emit(t.pos[0], t.pos[1] - 0.1, t.pos[2], { count: 2, color: [0.78, 0.7, 0.5], colorTo: [0.7, 0.62, 0.45], speed: 0.6, up: 0.5, life: 0.7, size: 0.18, drag: 1.5, alpha: 0.6, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+      if (t.hitCool <= 0) {
+        const hit = this.world.segment(was, t.pos, this.owner);
+        if (hit && hit.owner !== undefined) {
+          this.land(hit, 1.5, DAMAGE.spikeball * 0.4);
+          t.hitCool = 0.4;
+        }
+      }
+      if (t.rope.length < 0.6 || Math.hypot(t.pos[0] - muzzle[0], t.pos[1] - muzzle[1], t.pos[2] - muzzle[2]) < 0.5) {
         t.phase = 'ready';
         t.ball.hidden = true;
         for (const link of t.links) link.hidden = true;
-      } else {
-        const step = Math.min(l, REEL_SPEED * dt);
-        const next: Vec3 = [t.pos[0] + (d[0] / l) * step, t.pos[1] + (d[1] / l) * step, t.pos[2] + (d[2] / l) * step];
-        if (t.hitCool <= 0) {
-          const hit = this.world.segment(t.pos, next, this.owner);
-          if (hit && hit.owner !== undefined) {
-            this.land(hit, 1.5, DAMAGE.spikeball * 0.4);
-            t.hitCool = 0.4;
-          }
-        }
-        t.pos = next;
       }
     }
     if (t.phase !== 'ready') {
       translation(t.pos[0], t.pos[1], t.pos[2], t.ball.model as Float32Array);
-      // The chain between the muzzle and the ball sags, sways and drags on the sand.
-      t.rope.step(dt, muzzle, t.pos, null, 1.2, 0);
+      // The chain between the muzzle and the ball sags, sways and drags on the sand (while reeling it was stepped above, the ball on its end).
+      if (t.phase !== 'reeling') t.rope.step(dt, muzzle, t.pos, null, 1.2, 0);
       t.rope.floor((x, z) => this.world.heightAt(x, z) + 0.08);
       this.poseLinks(t.links, t.rope);
     }
@@ -496,7 +508,7 @@ export class Arsenal {
       const ground = this.world.segment(r.pos, [r.pos[0], r.pos[1] - 0.05, r.pos[2]], this.owner);
       if (r.life <= 0 || ground) {
         // Pop: a bright burst of its colours, glitter that falls, and a thump to whatever is close.
-        this.flash(r.pos, r.color, 0.3, 9, 80);
+        this.flash(r.pos, r.color, 0.3, 9, 45);
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 6, color: [1, 1, 0.9], colorTo: r.color, speed: 0.5, life: 0.12, size: 0.8, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 46, color: r.color, colorTo: r.colorTo, speed: 6, cone: Math.PI, life: 0.8, size: 0.09, gravity: 3, drag: 1.5, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark', stretch: 2 });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 24, color: r.colorTo, colorTo: [1, 1, 1], speed: 2.5, cone: Math.PI, life: 1.6, size: 0.06, gravity: 4, drag: 0.8, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark' });
@@ -593,6 +605,8 @@ function removeInstances(renderer: Renderer, instances: Instance[]): void {
 class Rope {
   readonly pts: Vec3[] = [];
   readonly prev: Vec3[] = [];
+  /** Segments wound in at the anchor (a drum), fractional: those points sit at the anchor and the next segment is short by the fraction. */
+  wound = 0;
 
   constructor(readonly n: number, readonly seg: number, from: Vec3, to: Vec3) {
     for (let i = 0; i <= n; i++) {
@@ -602,8 +616,14 @@ class Rope {
     this.reset(from, to);
   }
 
-  /** Lay the rope in a straight line from `from` to `to`, still. */
+  /** How much chain is out. */
+  get length(): number {
+    return (this.n - this.wound) * this.seg;
+  }
+
+  /** Lay the rope in a straight line from `from` to `to`, still, nothing wound in. */
   reset(from: Vec3, to: Vec3): void {
+    this.wound = 0;
     for (let i = 0; i <= this.n; i++) {
       const t = i / this.n;
       const p = this.pts[i];
@@ -640,9 +660,17 @@ class Rope {
   step(dt: number, anchor: Vec3, endAt: Vec3 | null, pull: Vec3 | null, drag: number, endDrag: number): void {
     const n = this.n;
     const g = -GRAVITY * dt * dt;
+    // Points up to `w0` are on the drum (at the anchor); segment w0 is the part-wound one.
+    const w0 = Math.min(n - 1, Math.floor(this.wound));
+    const frac = Math.min(1, this.wound - w0);
     for (let i = 1; i <= n; i++) {
       const p = this.pts[i];
       const q = this.prev[i];
+      if (i <= w0) {
+        p.splice(0, 3, anchor[0], anchor[1], anchor[2]);
+        q.splice(0, 3, anchor[0], anchor[1], anchor[2]);
+        continue;
+      }
       if (i === n && endAt) {
         q.splice(0, 3, p[0], p[1], p[2]);
         p.splice(0, 3, endAt[0], endAt[1], endAt[2]);
@@ -664,26 +692,27 @@ class Rope {
     }
     this.pts[0].splice(0, 3, anchor[0], anchor[1], anchor[2]);
     for (let it = 0; it < 10; it++) {
-      for (let i = 0; i < n; i++) {
+      for (let i = w0; i < n; i++) {
         const a = this.pts[i];
         const b = this.pts[i + 1];
         const dx = b[0] - a[0];
         const dy = b[1] - a[1];
         const dz = b[2] - a[2];
         const l = Math.hypot(dx, dy, dz) || 1e-6;
-        const diff = (l - this.seg) / l;
-        // Who gives: the anchor never, a pinned end never, the heavy ball little, links between them half each.
+        const want = i === w0 ? this.seg * (1 - frac) : this.seg;
+        const diff = (l - want) / l;
+        // Who gives: the anchor (and the drum) never, a pinned end never, the heavy ball little, links between them half each.
         let wa = 0.5;
         let wb = 0.5;
-        if (i === 0) {
+        if (i === w0) {
           wa = 0;
           wb = 1;
         }
         if (i + 1 === n) {
           if (endAt) {
-            wa = i === 0 ? 0 : 1;
+            wa = i === w0 ? 0 : 1;
             wb = 0;
-          } else if (i > 0) {
+          } else if (i > w0) {
             wa = 0.85;
             wb = 0.15;
           }
@@ -700,7 +729,7 @@ class Rope {
 
   /** Keep every free point above the ground (`height` at x, z), so a slack chain lies on the sand rather than under it. */
   floor(height: (x: number, z: number) => number): void {
-    for (let i = 1; i < this.n; i++) {
+    for (let i = Math.floor(this.wound) + 1; i < this.n; i++) {
       const p = this.pts[i];
       const h = height(p[0], p[2]);
       if (p[1] < h) p[1] = h;
