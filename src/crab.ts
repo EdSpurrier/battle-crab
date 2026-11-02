@@ -28,10 +28,15 @@ const STEP_LIFT = 0.26;
 /** How far ahead of the spot a foot lands, in seconds of the body's velocity, and the most it reaches ahead (world units) however fast. */
 const STEP_LEAD = 0.17;
 const STEP_LEAD_MAX = 0.75;
-/** A pincer's snap: how long it takes, how far the claw thrusts forward, how wide the jaw rests open (radians). */
-const SNAP_SECONDS = 0.28;
-const SNAP_THRUST = 0.45;
-const JAW_OPEN = 0.5;
+/**
+ * A pincer's nip: a reach out (the jaw gaping wider as it goes), a fast chomp, a short hold shut,
+ * then back. How long the whole takes, how far the claw reaches forward, the jaw's angles at rest and
+ * at its widest (radians).
+ */
+const SNAP_SECONDS = 0.5;
+const SNAP_REACH = 0.7;
+const JAW_OPEN = 0.45;
+const JAW_WIDE = 0.95;
 /** A planted foot further from its hip than this share of the leg's reach slides along, rather than stretch back to where it was. */
 const REACH_KEEP = 0.93;
 /** A group may start stepping once the other group's step is this far along (a quicker cadence at speed than waiting for it to land). */
@@ -192,11 +197,25 @@ interface Claw {
   side: number;
   upper: Instance;
   lower: Instance;
-  /** The pincer: a fixed lower jaw along the forearm and an upper jaw hinged at the wrist. */
+  /** The pincer: a fat palm at the wrist, a fixed lower jaw along the forearm and an upper jaw hinged at the wrist. */
+  palm: Instance;
   jawLower: Instance;
   jawUpper: Instance;
   /** A snap in progress, 0..1 (-1: none). */
   snap: number;
+}
+
+/** Where a nip is at `t` (0..1): how far the claw has reached out (0..1) and how far open the jaw is (radians). */
+function nip(t: number): { reach: number; open: number } {
+  const ease = (k: number) => k * k * (3 - 2 * k);
+  if (t < 0.45) {
+    const e = ease(t / 0.45);
+    return { reach: e, open: JAW_OPEN + (JAW_WIDE - JAW_OPEN) * e };
+  }
+  if (t < 0.56) return { reach: 1, open: JAW_WIDE * (1 - (t - 0.45) / 0.11) };
+  if (t < 0.7) return { reach: 1, open: 0 };
+  const e = ease((t - 0.7) / 0.3);
+  return { reach: 1 - e, open: JAW_OPEN * e };
 }
 
 /** A googly eye: the eyeball's centre in body space and a pupil that slides about on it (offset and speed across and up, as shares of the radius). */
@@ -291,22 +310,23 @@ export class Crab {
       }
     }
 
-    // Two claws held out in front, elbows out.
+    // Two big claws held up in front, close in, on arms bent double with the elbows out to the sides.
     for (const s of [-1, 1]) {
-      const l1 = 0.4;
-      const l2 = 0.45;
+      const l1 = 0.5;
+      const l2 = 0.55;
       this.claws.push({
-        shoulder: [s * 0.3, -0.05, 0.4],
-        rest: [s * 0.5, -0.3, 1.05],
-        pole: [s * 0.8, 0.5, 0.2],
+        shoulder: [s * 0.32, -0.02, 0.42],
+        rest: [s * 0.42, -0.2, 0.9],
+        pole: [s * 1, 0.5, 0.15],
         l1,
         l2,
         side: s,
-        upper: part(rod(l1, 0.1, LEG)),
-        lower: part(rod(l2, 0.085, LEG)),
-        // Jaws built along +y from the wrist, one each side of the hinge (local z is up once posed).
-        jawLower: part(ellipsoid(0, 0.2, -0.05, 0.14, 0.25, 0.065, BODY, 10, 6)),
-        jawUpper: part(ellipsoid(0, 0.19, 0.05, 0.13, 0.23, 0.06, BODY, 10, 6)),
+        upper: part(rod(l1, 0.11, LEG)),
+        lower: part(rod(l2, 0.095, LEG)),
+        // The pincer, built along +y from the wrist: a fat palm, then the jaws each side of the hinge (local z is up once posed).
+        palm: part(ellipsoid(0, 0.04, 0, 0.19, 0.17, 0.15, LEG, 12, 6)),
+        jawLower: part(ellipsoid(0, 0.3, -0.07, 0.2, 0.34, 0.09, BODY, 12, 6)),
+        jawUpper: part(ellipsoid(0, 0.28, 0.07, 0.18, 0.31, 0.08, BODY, 12, 6)),
         snap: -1,
       });
     }
@@ -510,18 +530,17 @@ export class Crab {
     for (const claw of this.claws) {
       const shoulder = toWorld(claw.shoulder, this.centre, yaw);
       const sway = Math.sin(this.phase * 2 + claw.side) * (0.02 + Math.min(0.06, speed * 0.02));
-      // A snap: the claw thrusts forward and a little up over the snap, the jaw shutting at its peak.
-      const snapping = claw.snap >= 0;
-      const thrust = snapping ? Math.sin(claw.snap * Math.PI) : 0;
-      const rest: Vec3 = [claw.rest[0] - claw.side * thrust * 0.1, claw.rest[1] + sway + thrust * 0.12, claw.rest[2] + sway * 0.5 + thrust * SNAP_THRUST];
+      // A nip: the claw reaches out and a little up and in, jaw gaping, then chomps and comes back.
+      const { reach, open } = claw.snap >= 0 ? nip(claw.snap) : { reach: 0, open: JAW_OPEN };
+      const rest: Vec3 = [claw.rest[0] - claw.side * reach * 0.15, claw.rest[1] + sway + reach * 0.1, claw.rest[2] + sway * 0.5 + reach * SNAP_REACH];
       const target = toWorld(rest, this.centre, yaw);
       const { joint, end } = twoBone(shoulder, target, claw.l1, claw.l2, toWorldDir(claw.pole, yaw));
       poseAlong(claw.upper.model, shoulder, joint, forward);
       poseAlong(claw.lower.model, joint, end, forward);
-      // The pincer carries on along the forearm: the lower jaw fixed, the upper hinged open at the wrist.
+      // The pincer carries on along the forearm: the palm and lower jaw fixed, the upper jaw hinged open at the wrist.
       const dir = normalize(sub(end, joint));
+      poseAlong(claw.palm.model, end, add(end, dir), [0, 1, 0]);
       poseAlong(claw.jawLower.model, end, add(end, dir), [0, 1, 0]);
-      const open = JAW_OPEN * (1 - thrust);
       let up = sub([0, 1, 0], scale(dir, dot([0, 1, 0], dir)));
       up = length(up) < 1e-4 ? [0, 0, 1] : normalize(up);
       const hinged = add(scale(dir, Math.cos(open)), scale(up, Math.sin(open)));
