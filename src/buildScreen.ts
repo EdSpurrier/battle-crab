@@ -45,7 +45,8 @@ const badMaterial = material({ color: [1, 0.3, 0.2], roughness: 1, transparent: 
 const ghost: Instance = { mesh: new Mesh(renderer.gl, box(-CELL / 2, -CELL / 2, -CELL / 2, CELL / 2, CELL / 2, CELL / 2, [1, 1, 1])), model: new Float32Array(16), material: ghostMaterial, hidden: true };
 renderer.instances.push(ghost);
 
-let piece: PieceKind = 'plank';
+/** What the left button does: place a piece of this kind, or erase ('erase'). */
+let piece: PieceKind | 'erase' = 'plank';
 let turn = 0;
 /** Where a placed piece would go, and which piece the pointer is on (to remove). */
 let target: [number, number, number] | null = null;
@@ -103,7 +104,7 @@ function pick(): void {
 }
 
 function placeable(): boolean {
-  if (!target) return false;
+  if (!target || piece === 'erase') return false;
   const type = pieceType(piece);
   if (type.weapon && weaponsOf(build).length >= MAX_WEAPONS) return false;
   // Something to stand on: the deck, or a piece below.
@@ -145,11 +146,12 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 canvas.addEventListener('pointerup', (e) => {
   if (moved < 4) {
-    if (e.button === 0 && target && placeable()) {
-      build.pieces.push({ x: target[0], y: target[1], z: target[2], kind: piece, yaw: turn });
-      rebuild();
-    } else if (e.button === 2 && over) {
+    const erase = e.button === 2 || (e.button === 0 && piece === 'erase');
+    if (erase && over) {
       build.pieces = build.pieces.filter((p) => p !== over);
+      rebuild();
+    } else if (e.button === 0 && piece !== 'erase' && target && placeable()) {
+      build.pieces.push({ x: target[0], y: target[1], z: target[2], kind: piece, yaw: turn });
       rebuild();
     }
   }
@@ -177,6 +179,7 @@ window.addEventListener('keydown', (e) => {
   if (e.target instanceof HTMLInputElement) return;
   const byKey = PIECES.find((p) => e.key === p.key);
   if (byKey) setPiece(byKey.kind);
+  if (e.key === '0' || e.code === 'KeyX') setPiece('erase');
   if (e.code === 'KeyR') turn = (turn + 1) % 4;
 });
 
@@ -185,11 +188,29 @@ window.addEventListener('keydown', (e) => {
 const panel = new SettingsPanel(document.body, 'Battle Shell', { persist: false, open: true });
 panel.root.classList.add('left');
 let slotsNote: HTMLParagraphElement | null = null;
-const pieceButtons = new Map<PieceKind, HTMLButtonElement>();
+const pieceButtons = new Map<PieceKind | 'erase', HTMLButtonElement>();
 
-function setPiece(kind: PieceKind): void {
+function setPiece(kind: PieceKind | 'erase'): void {
   piece = kind;
   pieceButtons.forEach((b, k) => b.classList.toggle('on', k === kind));
+}
+
+/** Take everything off the deck: the button asks once (a second press within three seconds does it). */
+let clearArmed = 0;
+function clearDeck(button: HTMLButtonElement): void {
+  const now = performance.now();
+  if (now - clearArmed < 3000) {
+    build.pieces = [];
+    rebuild();
+    button.textContent = 'Clear the deck';
+    clearArmed = 0;
+    return;
+  }
+  clearArmed = now;
+  button.textContent = 'Press again to clear';
+  setTimeout(() => {
+    if (performance.now() - clearArmed >= 3000) button.textContent = 'Clear the deck';
+  }, 3100);
 }
 
 function showSlots(): void {
@@ -228,16 +249,28 @@ function buildPanel(): void {
     list.appendChild(b);
     pieceButtons.set(p.kind, b);
   }
+  const eraser = document.createElement('button');
+  eraser.type = 'button';
+  eraser.textContent = '0 Eraser';
+  eraser.title = 'Left click removes the piece under the pointer (right click always does).';
+  eraser.classList.toggle('on', piece === 'erase');
+  eraser.addEventListener('click', () => setPiece('erase'));
+  list.appendChild(eraser);
+  pieceButtons.set('erase', eraser);
   panel.root.lastElementChild!.appendChild(list);
-  panel.note('Point at the deck or a piece: the lit cell is where it goes. Left places, right removes, R turns a weapon to face another way. A piece needs the deck or a piece under it.');
+  panel.note('Point at the deck or a piece: the lit cell is where it goes. Left places, right removes (or the eraser, 0), R turns a weapon to face another way. A piece needs the deck or a piece under it.');
   slotsNote = panel.note('');
   showSlots();
-  panel.plain().button('Clear the deck', () => {
-    if (confirm('Take everything off the deck?')) {
-      build.pieces = [];
-      rebuild();
-    }
-  }).button('Play', () => (location.href = './'));
+  panel.plain();
+  const bar = document.createElement('div');
+  bar.className = 'buttons';
+  const clearButton = document.createElement('button');
+  clearButton.type = 'button';
+  clearButton.textContent = 'Clear the deck';
+  clearButton.addEventListener('click', () => clearDeck(clearButton));
+  bar.appendChild(clearButton);
+  panel.root.appendChild(bar);
+  panel.button('Play', () => (location.href = './'));
 }
 buildPanel();
 
@@ -251,7 +284,15 @@ function frame(now: number): void {
   last = now;
   crab.update(dt, AT, 0, [0, 0, 0]);
   pick();
-  if (target) {
+  if (piece === 'erase') {
+    // The eraser lights the piece under the pointer, red.
+    if (over) {
+      const c = cellCentre(structure.shell, over.x, over.y, over.z);
+      multiply(crab.body, translation(c[0], c[1], c[2]), ghost.model);
+      ghost.material = badMaterial;
+      ghost.hidden = false;
+    } else ghost.hidden = true;
+  } else if (target) {
     const c = cellCentre(structure.shell, target[0], target[1], target[2]);
     multiply(crab.body, translation(c[0], c[1], c[2]), ghost.model);
     ghost.material = placeable() ? ghostMaterial : badMaterial;

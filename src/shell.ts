@@ -28,11 +28,11 @@ export interface ShellType {
 }
 
 export const SHELLS: ShellType[] = [
-  { id: 'whelk', name: 'Whelk', blurb: 'The shell it came with. Nothing special, nothing wrong.', good: ['4 × 4 deck, 3 high', 'armour 100'], bad: ['plain'], grid: [4, 4, 3], speed: 1, jump: 1, armor: 100, color: [0.36, 0.24, 0.12], light: [0.42, 0.29, 0.15], scale: 1 },
-  { id: 'conch', name: 'Conch', blurb: 'Broad and roomy: the widest deck to build on.', good: ['6 × 5 deck, 3 high', 'armour 140'], bad: ['speed × 0.8', 'jump × 0.85'], grid: [6, 5, 3], speed: 0.8, jump: 0.85, armor: 140, color: [0.55, 0.42, 0.3], light: [0.7, 0.55, 0.4], scale: 1.18 },
-  { id: 'nautilus', name: 'Nautilus', blurb: 'Light and quick, with little room on top.', good: ['speed × 1.25', 'jump × 1.2'], bad: ['3 × 3 deck, 3 high', 'armour 60'], grid: [3, 3, 3], speed: 1.25, jump: 1.2, armor: 60, color: [0.75, 0.7, 0.6], light: [0.6, 0.3, 0.2], scale: 0.85 },
-  { id: 'cowrie', name: 'Cowrie', blurb: 'Thick and glossy: shrugs off hits, but it is a lot to carry.', good: ['armour 200', '4 × 4 deck'], bad: ['only 2 high', 'speed × 0.7', 'jump × 0.7'], grid: [4, 4, 2], speed: 0.7, jump: 0.7, armor: 200, color: [0.2, 0.14, 0.1], light: [0.5, 0.4, 0.3], scale: 1.05 },
-  { id: 'turban', name: 'Turban', blurb: 'Tall: build high, and mind the balance.', good: ['4 × 3 deck, 5 high', 'jump × 1.1'], bad: ['speed × 0.9', 'armour 80'], grid: [4, 3, 5], speed: 0.9, jump: 1.1, armor: 80, color: [0.3, 0.33, 0.25], light: [0.45, 0.5, 0.35], scale: 1 },
+  { id: 'whelk', name: 'Whelk', blurb: 'The shell it came with. Nothing special, nothing wrong.', good: ['4 × 4 deck, 6 high', 'armour 100'], bad: ['plain'], grid: [4, 4, 6], speed: 1, jump: 1, armor: 100, color: [0.36, 0.24, 0.12], light: [0.42, 0.29, 0.15], scale: 1 },
+  { id: 'conch', name: 'Conch', blurb: 'Broad and roomy: the widest deck to build on.', good: ['6 × 5 deck, 6 high', 'armour 140'], bad: ['speed × 0.8', 'jump × 0.85'], grid: [6, 5, 6], speed: 0.8, jump: 0.85, armor: 140, color: [0.55, 0.42, 0.3], light: [0.7, 0.55, 0.4], scale: 1.18 },
+  { id: 'nautilus', name: 'Nautilus', blurb: 'Light and quick, with little room on top.', good: ['speed × 1.25', 'jump × 1.2'], bad: ['3 × 3 deck, 5 high', 'armour 60'], grid: [3, 3, 5], speed: 1.25, jump: 1.2, armor: 60, color: [0.75, 0.7, 0.6], light: [0.6, 0.3, 0.2], scale: 0.85 },
+  { id: 'cowrie', name: 'Cowrie', blurb: 'Thick and glossy: shrugs off hits, but it is a lot to carry.', good: ['armour 200', '4 × 4 deck'], bad: ['only 4 high', 'speed × 0.7', 'jump × 0.7'], grid: [4, 4, 4], speed: 0.7, jump: 0.7, armor: 200, color: [0.2, 0.14, 0.1], light: [0.5, 0.4, 0.3], scale: 1.05 },
+  { id: 'turban', name: 'Turban', blurb: 'Tall: build high, and mind the balance.', good: ['4 × 3 deck, 10 high', 'jump × 1.1'], bad: ['speed × 0.9', 'armour 80'], grid: [4, 3, 10], speed: 0.9, jump: 1.1, armor: 80, color: [0.3, 0.33, 0.25], light: [0.45, 0.5, 0.35], scale: 1 },
 ];
 
 export type PieceKind = 'plank' | 'joint' | 'cannon' | 'gatling' | 'machinegun' | 'flamethrower' | 'knocker';

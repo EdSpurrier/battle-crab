@@ -1,11 +1,21 @@
-import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, translation, type Instance, type Mat4, type MeshData, type Renderer, type Vec } from 'gridfall-engine';
+import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { CELL, cellCentre, pieceType, shellType, type Piece, type ShellBuild, type ShellType } from './shell';
 
 /**
  * What is built on the shell, drawn: one mesh per piece in its cell, in body space, posed each
- * frame by the crab's body matrix. Weapons have a moving part (a barrel that kicks back, a
- * gatling cluster that spins, a knocker ball that swings) driven by `kick` and `spin`.
+ * frame by the crab's body matrix. Weapons are turrets: the whole piece traverses about its
+ * cell's upright axis toward the aim point and its moving part (the barrel, the gatling cluster)
+ * elevates about its pivot, so a shot leaves the muzzle straight along the barrel. The moving
+ * part also kicks back, spins (a gatling) or swings (the knocker) with `kick` and `spin`.
  */
+
+/** How far a turret traverses from the way it is mounted (radians), how it elevates, and how quickly it turns (per second). */
+const TRAVERSE = (140 * Math.PI) / 180;
+const ELEVATE: [number, number] = [(-20 * Math.PI) / 180, (60 * Math.PI) / 180];
+const TURN_RATE = 9;
+/** A cannonball's speed: the barrel's elevation is solved so the ball comes down on the aim point. */
+export const CANNON_SPEED = 20;
+const GRAVITY = 20;
 
 const WOOD: Vec = [0.42, 0.27, 0.13];
 const WOOD_DARK: Vec = [0.3, 0.19, 0.09];
@@ -120,7 +130,10 @@ function shapeOf(kind: Piece['kind']): Shape {
       };
     case 'flamethrower':
       return {
-        fixed: merge([ellipsoid(0, -0.02, -0.06, 0.1, 0.11, 0.12, TANK, 12, 7), box(-0.025, -0.01, 0.02, 0.025, 0.04, 0.3, IRON), box(-0.045, -0.03, 0.26, 0.045, 0.06, 0.32, IRON_LIGHT), box(-0.09, -H, -0.1, 0.09, -H + 0.05, 0.08, WOOD_DARK)]),
+        fixed: merge([ellipsoid(0, -0.02, -0.06, 0.1, 0.11, 0.12, TANK, 12, 7), box(-0.09, -H, -0.1, 0.09, -H + 0.05, 0.08, WOOD_DARK)]),
+        // The nozzle pipe elevates about the tank's front.
+        moving: merge([box(-0.025, -0.025, -0.02, 0.025, 0.025, 0.26, IRON), box(-0.045, -0.045, 0.22, 0.045, 0.045, 0.28, IRON_LIGHT)]),
+        pivot: [0, 0.015, 0.04],
         muzzle: [0, 0.015, 0.33],
       };
     case 'knocker':
@@ -143,14 +156,24 @@ export interface Mounted {
   /** The weapon's moving part: kicked back (0..1, a recoil or a swing) and spun (radians, a gatling). */
   kick: number;
   spin: number;
-  muzzleLocal: [number, number, number];
-  facingLocal: [number, number, number];
+  /** The turret's traverse from the way it is mounted and its barrel's elevation (radians), eased toward what is wanted. */
+  aimYaw: number;
+  aimPitch: number;
+  wantYaw: number;
+  wantPitch: number;
+  /** Whether the cannon can reach the aim point at CANNON_SPEED (else it fires at its highest). */
+  inRange: boolean;
+  /** After `pose`: where a shot leaves and the way the barrel points, in the world. */
+  muzzle: Vec3;
+  direction: Vec3;
 }
 
 interface Part {
   instance: Instance;
   local: Mat4;
-  moving?: { instance: Instance; pivot: Mat4; kind: Piece['kind'] };
+  /** A weapon's turret: the cell's centre and mounting turn (its local is remade each frame), the pivot in cell space, the muzzle from the pivot. */
+  turret?: { weapon: Mounted; cell: Vec3; mountYaw: number; pivot: [number, number, number]; muzzleRel: [number, number, number] };
+  moving?: { instance: Instance; kind: Piece['kind'] };
 }
 
 export class Structure {
@@ -160,6 +183,8 @@ export class Structure {
   private readonly instances: Instance[] = [];
   private readonly tmp: Mat4 = new Float32Array(16);
   private readonly tmp2: Mat4 = new Float32Array(16);
+  private readonly tmp3: Mat4 = new Float32Array(16);
+  private readonly barrel: Mat4 = new Float32Array(16);
 
   constructor(private readonly renderer: Renderer, readonly build: ShellBuild) {
     this.shell = shellType(build.shell);
@@ -170,53 +195,110 @@ export class Structure {
       const type = pieceType(piece.kind);
       const shape = type.weapon ? scaledShape(shapeOf(piece.kind), WEAPON_SCALE) : shapeOf(piece.kind);
       const c = cellCentre(this.shell, piece.x, piece.y, piece.z);
-      const local = multiply(translation(c[0], c[1], c[2]), rotationY((piece.yaw * Math.PI) / 2));
+      const mountYaw = (piece.yaw * Math.PI) / 2;
+      const local = multiply(translation(c[0], c[1], c[2]), rotationY(mountYaw));
       const mat = type.weapon ? metal : wood;
       const instance: Instance = { mesh: new Mesh(gl, shape.fixed), model: new Float32Array(16), material: mat };
       this.instances.push(instance);
       const part: Part = { instance, local };
-      if (shape.moving && shape.pivot) {
+      if (shape.moving) {
         const mi: Instance = { mesh: new Mesh(gl, shape.moving), model: new Float32Array(16), material: mat };
         this.instances.push(mi);
-        part.moving = { instance: mi, pivot: multiply(local, translation(shape.pivot[0], shape.pivot[1], shape.pivot[2])), kind: piece.kind };
+        part.moving = { instance: mi, kind: piece.kind };
+      }
+      if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < 4) {
+        const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, muzzle: [0, 0, 0], direction: [0, 0, 1] };
+        this.weapons.push(weapon);
+        const p = shape.pivot;
+        const m = shape.muzzle;
+        part.turret = { weapon, cell: c, mountYaw, pivot: p, muzzleRel: [m[0] - p[0], m[1] - p[1], m[2] - p[2]] };
       }
       this.parts.push(part);
-      if (type.weapon && shape.muzzle && this.weapons.length < 4) {
-        const yaw = (piece.yaw * Math.PI) / 2;
-        const s = Math.sin(yaw);
-        const co = Math.cos(yaw);
-        const m = shape.muzzle;
-        this.weapons.push({ piece, index, kick: 0, spin: 0, muzzleLocal: [c[0] + m[0] * co + m[2] * s, c[1] + m[1], c[2] - m[0] * s + m[2] * co], facingLocal: [s, 0, co] });
-      }
     });
     renderer.instances.push(...this.instances);
   }
 
-  /** Place every piece by the crab's body matrix, the moving parts by their kick and spin. */
-  pose(body: Mat4): void {
-    let w = 0;
+  /**
+   * Turn the turrets toward `target` (a world point; null: back to the way they are mounted),
+   * eased. The cannon's elevation is the lob that lands there at CANNON_SPEED (the low arc), or
+   * its highest when the point is out of reach.
+   */
+  aim(body: Mat4, target: Vec3 | null, dt: number): void {
+    const bodyYaw = Math.atan2(body[8], body[10]);
+    const cy = Math.cos(-bodyYaw);
+    const sy = Math.sin(-bodyYaw);
     for (const part of this.parts) {
+      const t = part.turret;
+      if (!t) continue;
+      const w = t.weapon;
+      if (target) {
+        // The target in body space, then about the cell's upright axis.
+        const dx0 = target[0] - body[12];
+        const dz0 = target[2] - body[14];
+        const lx = dx0 * cy + dz0 * sy;
+        const lz = -dx0 * sy + dz0 * cy;
+        const ly = target[1] - body[13];
+        const dx = lx - t.cell[0];
+        const dz = lz - t.cell[2];
+        const yaw = Math.atan2(dx, dz) - t.mountYaw;
+        w.wantYaw = Math.max(-TRAVERSE, Math.min(TRAVERSE, Math.atan2(Math.sin(yaw), Math.cos(yaw))));
+        // Elevation from the pivot: its height on the cell, the horizontal reach to the point.
+        const D = Math.max(0.3, Math.hypot(dx, dz) - t.pivot[2]);
+        const dy = ly - (t.cell[1] + t.pivot[1]);
+        let pitch = Math.atan2(dy, D);
+        w.inRange = true;
+        if (w.piece.kind === 'cannon') {
+          const v2 = CANNON_SPEED * CANNON_SPEED;
+          const disc = v2 * v2 - GRAVITY * (GRAVITY * D * D + 2 * dy * v2);
+          if (disc >= 0) pitch = Math.atan((v2 - Math.sqrt(disc)) / (GRAVITY * D));
+          else {
+            pitch = Math.PI / 4;
+            w.inRange = false;
+          }
+        }
+        w.wantPitch = w.piece.kind === 'knocker' ? 0 : Math.max(ELEVATE[0], Math.min(ELEVATE[1], pitch));
+      } else {
+        w.wantYaw = 0;
+        w.wantPitch = 0;
+      }
+      const k = 1 - Math.exp(-TURN_RATE * dt);
+      w.aimYaw += (w.wantYaw - w.aimYaw) * k;
+      w.aimPitch += (w.wantPitch - w.aimPitch) * k;
+    }
+  }
+
+  /** Place every piece by the crab's body matrix: turrets turned and elevated, moving parts kicked, spun or swung. */
+  pose(body: Mat4): void {
+    for (const part of this.parts) {
+      const t = part.turret;
+      if (t) {
+        // The turret's local placement this frame: the cell, turned by the mounting and the traverse.
+        multiply(translation(t.cell[0], t.cell[1], t.cell[2], this.tmp), rotationY(t.mountYaw + t.weapon.aimYaw, this.tmp2), part.local);
+      }
       multiply(body, part.local, part.instance.model);
+      if (!t) continue;
+      const w = t.weapon;
+      // The barrel's frame: at the pivot, elevated (a turn about x; positive x-turn tips +z down, so the pitch is negated).
+      multiply(multiply(part.instance.model, translation(t.pivot[0], t.pivot[1], t.pivot[2], this.tmp), this.tmp2), rotationX(-w.aimPitch, this.tmp3), this.barrel);
+      const mz = transformPoint(this.barrel, t.muzzleRel);
+      w.muzzle = [mz[0], mz[1], mz[2]];
+      const dl = Math.hypot(this.barrel[8], this.barrel[9], this.barrel[10]) || 1;
+      w.direction = [this.barrel[8] / dl, this.barrel[9] / dl, this.barrel[10] / dl];
       if (!part.moving) continue;
-      const weapon = this.weapons.find((m) => m.piece === this.build.pieces[this.parts.indexOf(part)]);
-      const kick = weapon?.kick ?? 0;
-      const spin = weapon?.spin ?? 0;
       let motion: Mat4;
       switch (part.moving.kind) {
         case 'knocker':
           // Swings forward and down about the pole's top; built hanging out along +z, so a swing is a turn about x.
-          motion = rotationX(-0.35 + Math.sin(kick * Math.PI) * 1.9, this.tmp);
+          motion = rotationX(-0.35 + Math.sin(w.kick * Math.PI) * 1.9, this.tmp);
           break;
         case 'gatling':
-          motion = multiply(translation(0, 0, -kick * 0.03 * WEAPON_SCALE, this.tmp2), rotZ(spin), this.tmp);
+          motion = multiply(translation(0, 0, -w.kick * 0.03 * WEAPON_SCALE, this.tmp2), rotZ(w.spin), this.tmp);
           break;
         default:
-          motion = translation(0, 0, -kick * 0.09 * WEAPON_SCALE, this.tmp);
+          motion = translation(0, 0, -w.kick * 0.09 * WEAPON_SCALE, this.tmp);
       }
-      multiply(multiply(body, part.moving.pivot, this.tmp2), motion, part.moving.instance.model);
-      w++;
+      multiply(this.barrel, motion, part.moving.instance.model);
     }
-    void w;
   }
 
   dispose(): void {

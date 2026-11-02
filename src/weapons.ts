@@ -1,7 +1,7 @@
-import { Mesh, MeshBuilder, material, transformPoint, translation, type Instance, type Mat4, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { Mesh, MeshBuilder, material, translation, type Instance, type Mat4, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { impactFx, type Hit, type World } from './impacts';
 import { pieceType } from './shell';
-import type { Mounted, Structure } from './structure';
+import { CANNON_SPEED, type Mounted, type Structure } from './structure';
 
 /**
  * Firing what is mounted on the shell. One weapon is selected at a time (action slots 2 to 5;
@@ -72,12 +72,13 @@ export class Arsenal {
   }
 
   /**
-   * A frame: fire what the trigger asks of the chosen weapon, move the balls, ease the kicks. Shots
-   * go toward `aimAt` (the crosshair's point in the world, the ground marker) when given, else the
-   * way the weapon is mounted.
+   * A frame: turn the turrets toward `aimAt` (the crosshair's point in the world, the ground
+   * marker), fire what the trigger asks of the chosen weapon straight out of its barrel, move the
+   * balls, ease the kicks.
    */
   update(dt: number, body: Mat4, aimAt: Vec3 | null = null): void {
     this.clock += dt;
+    this.structure.aim(body, aimAt, dt);
     const w = this.weapon;
     const pulled = this.pulled;
     this.pulled = false;
@@ -100,21 +101,16 @@ export class Arsenal {
       }
     }
     if (w) {
-      const muzzle = this.point(body, w.muzzleLocal);
-      let facing = this.direction(body, w.facingLocal);
-      if (aimAt) {
-        const d: Vec3 = [aimAt[0] - muzzle[0], aimAt[1] - muzzle[1], aimAt[2] - muzzle[2]];
-        const l = Math.hypot(d[0], d[1], d[2]);
-        // Only ahead of the weapon: it does not shoot back through the crab.
-        if (l > 0.5 && d[0] * facing[0] + d[1] * facing[1] + d[2] * facing[2] > 0) facing = [d[0] / l, d[1] / l, d[2] / l];
-      }
+      // Straight out of the barrel, as posed last frame.
+      const muzzle = w.muzzle;
+      const facing = w.direction;
       const cool = this.cooldown.get(w) ?? 0;
       switch (w.piece.kind) {
         case 'cannon':
           if (pulled && cool <= 0) {
             this.cooldown.set(w, 1);
             w.kick = 1;
-            this.ball(muzzle, this.lob(muzzle, aimAt, facing));
+            this.ball(muzzle, [facing[0] * CANNON_SPEED, facing[1] * CANNON_SPEED, facing[2] * CANNON_SPEED]);
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 14, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 5, dir: facing, cone: 0.35, life: 0.18, size: 0.14, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 24, color: [0.55, 0.55, 0.55], colorTo: [0.3, 0.3, 0.3], speed: 2.5, dir: facing, cone: 0.5, up: 0.6, life: 1.6, size: 0.3, drag: 1.2, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
           }
@@ -175,28 +171,6 @@ export class Arsenal {
     return m ? pieceType(m.piece.kind).name : 'Claws';
   }
 
-  /**
-   * A cannonball's velocity: a lob at a fixed angle that comes down on the aim point (gravity 20),
-   * within what the cannon can throw; with nothing to aim at, a standard shot the way it faces.
-   */
-  private lob(from: Vec3, aimAt: Vec3 | null, facing: Vec3): Vec3 {
-    const g = 20;
-    const angle = (32 * Math.PI) / 180;
-    if (aimAt) {
-      const dx = aimAt[0] - from[0];
-      const dz = aimAt[2] - from[2];
-      const D = Math.hypot(dx, dz);
-      const dy = aimAt[1] - from[1];
-      const denom = 2 * Math.cos(angle) * Math.cos(angle) * (D * Math.tan(angle) - dy);
-      if (D > 0.5 && denom > 0) {
-        const v = Math.min(26, Math.max(5, Math.sqrt((g * D * D) / denom)));
-        const h = v * Math.cos(angle);
-        return [(dx / D) * h, v * Math.sin(angle), (dz / D) * h];
-      }
-    }
-    return [facing[0] * 16, 3 + facing[1] * 16, facing[2] * 16];
-  }
-
   private ball(at: Vec3, vel: Vec3): void {
     const instance: Instance = { mesh: this.ballMesh, model: translation(at[0], at[1], at[2]), material: this.ballMaterial };
     this.renderer.instances.push(instance);
@@ -215,15 +189,4 @@ export class Arsenal {
     this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 3, color: [1, 0.8, 0.4], colorTo: [1, 0.4, 0.1], speed: 2, dir: facing, cone: 0.6, life: 0.08, size: 0.1, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
   }
 
-  private point(body: Mat4, local: [number, number, number]): Vec3 {
-    const p = transformPoint(body, local);
-    return [p[0], p[1], p[2]];
-  }
-
-  private direction(body: Mat4, local: [number, number, number]): Vec3 {
-    // A direction through the rotation only, lifted a little so shots arc rather than skim the sand.
-    const d: Vec3 = [body[0] * local[0] + body[4] * local[1] + body[8] * local[2], body[1] * local[0] + body[5] * local[1] + body[9] * local[2] + 0.08, body[2] * local[0] + body[6] * local[1] + body[10] * local[2]];
-    const l = Math.hypot(d[0], d[1], d[2]) || 1;
-    return [d[0] / l, d[1] / l, d[2] / l];
-  }
 }
