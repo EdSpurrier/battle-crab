@@ -1,16 +1,17 @@
-import type { Vec3 } from 'gridfall-engine';
-import type { Structure } from './structure';
-import type { Mounted } from './structure';
+import { ENEMY_KINDS, type EnemyKind, type EnemyKindId } from './enemyKinds';
+import type { Mounted, Structure } from './structure';
 import type { ShellBuild } from './shell';
 import { plainBoost, type Arsenal, type Boost } from './weapons';
 
 /**
- * Bullet Hell: a mode of its own (index.html?mode=hell). The crab starts with one plain machine gun
- * on its back and nothing else; cracked opponents sometimes drop a power-up, and each one taken
- * climbs a stage on the primary gun (left button) or the secondary (right button, a cannon that
- * the first secondary power-up bolts on). The stages below are cumulative, and past the end of a
- * table the last stage repeats, so it only ever gets bigger, faster and madder. Cracked, the run
- * is over: back to the plain gun.
+ * Bullet Hell: a mode of its own (index.html?mode=hell). The crab starts with a machine gun (the
+ * primary, left button, bottomless) and a grenade launcher (the secondary, right button, on a
+ * recharge) and nothing else; every gun fires dead level. Cracked opponents sometimes drop a
+ * power-up, and each one taken climbs a stage on one gun or the other. The stages below are
+ * cumulative, and past the end of a table the last stage repeats, so it only ever gets bigger,
+ * faster and madder. Opponents come in waves: every KILLS_PER_STAGE cracks is a stage, each stage
+ * brings more of them and new kinds (enemyKinds.ts), tougher as the stages mount; a boss every
+ * fifth stage. Cracked, the run is over: back to the plain guns and stage one.
  */
 
 interface Stage {
@@ -41,22 +42,24 @@ export const PRIMARY: Stage[] = [
   { name: 'Overkill', blurb: 'Bigger, harder, wider bursts. Again.', apply: (b) => { b.damage *= 1.35; b.size *= 1.15; b.blast += 0.6; } },
 ];
 
+/** The grenade launcher starts on a slow recharge (rate 3: a grenade every couple of seconds). */
 export const SECONDARY: Stage[] = [
-  { name: 'Cannon', blurb: 'A cannon on the back, on the right button.', apply: () => {} },
-  { name: 'Heavy shot', blurb: 'Bigger balls that hit harder.', apply: (b) => { b.damage *= 1.6; b.size *= 1.4; } },
-  { name: 'Triple cannon', blurb: 'Three balls in a spread.', apply: (b) => { b.streams = fanOf(20, 1); } },
-  { name: 'Quick reload', blurb: 'Twice the rate.', apply: (b) => { b.rate *= 0.5; } },
-  { name: 'Shrapnel', blurb: 'Every ball bursts where it lands.', apply: (b) => { b.blast = 3; } },
-  { name: 'Five barrels', blurb: 'Five balls in a spread, bigger again.', apply: (b) => { b.streams = fanOf(16, 2); b.size *= 1.3; } },
-  { name: 'Doom cannon', blurb: 'Enormous, fast, and the bursts are huge.', apply: (b) => { b.damage *= 2.5; b.size *= 1.6; b.blast = 4.5; b.rate *= 0.6; } },
-  { name: 'Apocalypse', blurb: 'More balls, more damage. Again.', apply: (b) => { b.damage *= 1.4; b.streams = fanOf(12, Math.floor(b.streams.length / 2) + 1); } },
+  { name: 'Grenade launcher', blurb: 'One grenade at a time, on a recharge.', apply: (b) => { b.rate = 3; } },
+  { name: 'Bigger bang', blurb: 'A wider, harder blast.', apply: (b) => { b.blast += 1.2; b.damage *= 1.4; } },
+  { name: 'Double shot', blurb: 'Two grenades a pull.', apply: (b) => { b.streams = [-6 * DEG, 6 * DEG]; } },
+  { name: 'Quick recharge', blurb: 'Grenades come back much faster.', apply: (b) => { b.rate *= 0.6; } },
+  { name: 'Cluster', blurb: 'Each burst throws out bomblets.', apply: (b) => { b.cluster = 5; } },
+  { name: 'Triple spread', blurb: 'Three grenades fanned out.', apply: (b) => { b.streams = fanOf(14, 1); } },
+  { name: 'Heavy grenades', blurb: 'Bigger grenades, bigger blasts.', apply: (b) => { b.size *= 1.5; b.blast += 1.5; b.damage *= 1.5; } },
+  { name: 'Carpet', blurb: 'Five grenades a pull, recharging faster still.', apply: (b) => { b.streams = fanOf(12, 2); b.rate *= 0.7; } },
+  { name: 'Armageddon', blurb: 'More bomblets, more blast. Again.', apply: (b) => { b.cluster += 3; b.blast += 0.6; b.damage *= 1.3; } },
 ];
 
 /** The boost a stage number earns: every stage up to it applied in turn (the last repeats past the end). */
 export function boostFor(table: Stage[], stage: number): Boost {
   const b = plainBoost();
   for (let i = 0; i <= stage; i++) table[Math.min(i, table.length - 1)].apply(b);
-  b.grow = Math.min(2.4, 1 + 0.1 * (stage + 1));
+  b.grow = Math.min(2.4, 1 + 0.1 * stage);
   return b;
 }
 
@@ -64,7 +67,7 @@ export function stageOf(table: Stage[], stage: number): Stage {
   return table[Math.min(stage, table.length - 1)];
 }
 
-/** How the run starts: a whelk, two planks and a machine gun; tiny clampers so a fourth slot is free. */
+/** How the run starts: a whelk, two planks, a machine gun and a grenade launcher; tiny clampers so the slots are the guns'. */
 export function hellBuild(): ShellBuild {
   return {
     shell: 'whelk',
@@ -72,6 +75,7 @@ export function hellBuild(): ShellBuild {
       { x: 1, y: 0, z: 1, kind: 'plank', yaw: 0, material: 'metal' },
       { x: 2, y: 0, z: 1, kind: 'plank', yaw: 0, material: 'metal' },
       { x: 1, y: 1, z: 1, kind: 'machinegun', yaw: 0 },
+      { x: 2, y: 1, z: 1, kind: 'grenade', yaw: 0 },
     ],
     claws: 'tiny',
   };
@@ -80,13 +84,36 @@ export function hellBuild(): ShellBuild {
 /** A power-up drops this often: at least every DROP_EVERY cracks, with a chance each time before that. */
 const DROP_CHANCE = 0.45;
 const DROP_EVERY = 3;
+/** Cracks per wave stage, and the most opponents on the beach at once. */
+const KILLS_PER_STAGE = 6;
+const MAX_ENEMIES = 12;
+
+/** What each stage brings: a weight per kind (0: none yet). The march never stops. */
+function roster(stage: number): Partial<Record<EnemyKindId, number>> {
+  return {
+    marcher: 3,
+    gunner: stage >= 2 ? 2 : 0.6,
+    skirmisher: stage >= 3 ? 1.6 : 0,
+    bruiser: stage >= 4 ? 1 : 0,
+    rocketeer: stage >= 5 ? 1.2 : 0,
+  };
+}
+
+const STAGE_NEWS: Record<number, string> = {
+  2: 'gunners join the march',
+  3: 'skirmishers dart in with flame',
+  4: 'bruisers lumber in under heavy guns',
+  5: 'rocketeers shell from afar, and a boss',
+};
 
 export class Hell {
   primary = 0;
-  /** -1: no secondary yet. */
-  secondary = -1;
+  secondary = 0;
   kills = 0;
   private sinceDrop = 0;
+  /** Marchers come in groups: this many more of them are due. */
+  private groupLeft = 0;
+  private bossFor = 0;
 
   constructor(private readonly arsenal: Arsenal, private readonly structure: Structure) {
     this.apply();
@@ -97,33 +124,38 @@ export class Hell {
   }
 
   private get secondaryGun(): Mounted | undefined {
-    return this.structure.weapons.find((w) => w.piece.kind === 'cannon');
+    return this.structure.weapons.find((w) => w.piece.kind === 'grenade');
   }
 
-  /** A crab cracked (at `at`): whether a power-up drops there. */
-  onKill(): boolean {
+  /** The wave stage, from one. */
+  get stage(): number {
+    return 1 + Math.floor(this.kills / KILLS_PER_STAGE);
+  }
+
+  /** How far through the stage, 0..1. */
+  get stageShare(): number {
+    return (this.kills % KILLS_PER_STAGE) / KILLS_PER_STAGE;
+  }
+
+  /** A crab cracked: whether a power-up drops there; `news` is set when a new stage begins. */
+  onKill(): { drop: boolean; news: string | null } {
+    const before = this.stage;
     this.kills++;
     this.sinceDrop++;
-    if (this.sinceDrop < DROP_EVERY && Math.random() > DROP_CHANCE) return false;
+    const news = this.stage > before ? `Stage ${this.stage}${STAGE_NEWS[this.stage] ? `: ${STAGE_NEWS[this.stage]}` : this.stage % 5 === 0 ? ': a boss' : ''}` : null;
+    if (this.sinceDrop < DROP_EVERY && Math.random() > DROP_CHANCE) return { drop: false, news };
     this.sinceDrop = 0;
-    return true;
+    return { drop: true, news };
   }
 
   /** A power-up taken: the primary or the secondary climbs a stage; what to tell the player. */
   powerUp(): string {
-    // The secondary comes along once the primary has a head start, then they take turns by chance.
-    const wantSecondary = this.secondary < 0 ? this.primary >= 2 : Math.random() < 0.45;
-    if (wantSecondary) {
-      if (this.secondary < 0 && !this.secondaryGun && !this.structure.pickUp('cannon')) return this.climbPrimary();
+    if (this.primary >= 1 && Math.random() < 0.45) {
       this.secondary++;
       this.apply();
       const s = stageOf(SECONDARY, this.secondary);
-      return `Secondary: ${s.name}! ${s.blurb}`;
+      return `Grenades: ${s.name}! ${s.blurb}`;
     }
-    return this.climbPrimary();
-  }
-
-  private climbPrimary(): string {
     this.primary++;
     this.apply();
     const s = stageOf(PRIMARY, this.primary);
@@ -139,17 +171,11 @@ export class Hell {
       p.grow = b.grow;
     }
     const s = this.secondaryGun;
-    if (s && this.secondary >= 0) {
+    if (s) {
       const b = boostFor(SECONDARY, this.secondary);
       this.arsenal.boost.set(s, b);
       s.grow = b.grow;
     }
-  }
-
-  /** The secondary's trigger (the right button): nothing until it has been earned. */
-  fireSecondary(down: boolean): void {
-    const s = this.secondaryGun;
-    if (s && this.secondary >= 0) this.arsenal.fire(s, down);
   }
 
   firePrimary(down: boolean): void {
@@ -157,21 +183,26 @@ export class Hell {
     if (p) this.arsenal.fire(p, down);
   }
 
-  /** The run is over (cracked): back to the plain gun; the cannon comes off. */
-  reset(): string {
-    const summary = `Run over: ${this.kills} cracked, ${stageOf(PRIMARY, this.primary).name}${this.secondary >= 0 ? ` and ${stageOf(SECONDARY, this.secondary).name}` : ''}`;
+  fireSecondary(down: boolean): void {
     const s = this.secondaryGun;
+    if (s) this.arsenal.fire(s, down);
+  }
+
+  /** How much of the grenade launcher's recharge is back, 0..1. */
+  secondaryCharge(): number {
+    const s = this.secondaryGun;
+    return s ? this.arsenal.readyShare(s) : 0;
+  }
+
+  /** The run is over (cracked): back to the plain guns and stage one. */
+  reset(): string {
+    const summary = `Run over at stage ${this.stage}: ${this.kills} cracked, ${stageOf(PRIMARY, this.primary).name} and ${stageOf(SECONDARY, this.secondary).name}`;
     this.primary = 0;
-    this.secondary = -1;
+    this.secondary = 0;
     this.kills = 0;
     this.sinceDrop = 0;
-    if (s) {
-      this.arsenal.boost.delete(s);
-      const was = this.structure.invulnerable;
-      this.structure.invulnerable = false;
-      this.structure.damage(s.index, Number.POSITIVE_INFINITY);
-      this.structure.invulnerable = was;
-    }
+    this.groupLeft = 0;
+    this.bossFor = 0;
     this.apply();
     return summary;
   }
@@ -179,17 +210,52 @@ export class Hell {
   /** The HUD's two chips. */
   labels(): { primary: string; secondary: string } {
     const p = stageOf(PRIMARY, this.primary);
-    const s = this.secondary >= 0 ? stageOf(SECONDARY, this.secondary) : null;
-    return { primary: `${p.name} · Lv ${this.primary + 1}`, secondary: s ? `${s.name} · Lv ${this.secondary + 1}` : 'no secondary yet' };
+    const s = stageOf(SECONDARY, this.secondary);
+    return { primary: `${p.name} · Lv ${this.primary + 1}`, secondary: `${s.name} · Lv ${this.secondary + 1}` };
   }
 
-  /** How many opponents the beach should hold now: more as the run goes on. */
+  /** How many opponents the beach should hold now: more with every stage. */
   wantEnemies(): number {
-    return Math.min(8, 3 + Math.floor(this.kills / 3));
+    const s = this.stage;
+    return Math.min(MAX_ENEMIES, 3 + s + Math.floor(s / 2));
   }
 
-  /** Where a power-up lands: where the crab cracked. */
-  dropAt(at: Vec3): Vec3 {
-    return [at[0], at[1], at[2]];
+  /** Armour on top of a kind's, by stage. */
+  armorScale(): number {
+    return 1 + 0.08 * (this.stage - 1);
+  }
+
+  /** The next opponent to send: a boss once per fifth stage, marchers in threes, the rest by the stage's roster. */
+  nextKind(): EnemyKind {
+    const s = this.stage;
+    if (s % 5 === 0 && this.bossFor !== s) {
+      this.bossFor = s;
+      return ENEMY_KINDS.boss;
+    }
+    if (this.groupLeft > 0) {
+      this.groupLeft--;
+      return ENEMY_KINDS.marcher;
+    }
+    const r = roster(s);
+    const total = Object.values(r).reduce((a, b) => a + (b ?? 0), 0);
+    let pick = Math.random() * total;
+    for (const [id, w] of Object.entries(r) as [EnemyKindId, number][]) {
+      pick -= w ?? 0;
+      if (pick <= 0) {
+        if (id === 'marcher') this.groupLeft = 2;
+        return ENEMY_KINDS[id];
+      }
+    }
+    return ENEMY_KINDS.marcher;
+  }
+
+  /** How long until the next opponent: quick for the rest of a group, faster as the stages mount. */
+  respawnSeconds(): number {
+    return this.groupLeft > 0 ? 0.5 : Math.max(0.8, 2.4 - 0.12 * (this.stage - 1));
+  }
+
+  /** How hot it is getting overall, 0..1 (the gauge's colour): stage ten is as hot as it reads. */
+  heat(): number {
+    return Math.min(1, (this.stage - 1 + this.stageShare) / 9);
   }
 }

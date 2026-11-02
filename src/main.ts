@@ -3,6 +3,7 @@ import { ThirdPersonCamera } from './camera';
 import { crabBox } from './combat';
 import { Controls } from './controls';
 import { Enemy } from './enemy';
+import { ENEMY_KINDS } from './enemyKinds';
 import { GamepadInput } from './gamepad';
 import { buildGround } from './ground';
 import { World, wreckFx } from './impacts';
@@ -62,6 +63,9 @@ world.obstacles.push(...props.obstacles());
 player.blockers = world.obstacles;
 const arsenal = new Arsenal(renderer, structure, world, player, 1, HELL);
 structure.invulnerable = HELL;
+// Bullet Hell: a quicker crab, and every gun fires dead level.
+structure.flatAim = HELL;
+player.speedScale = HELL ? 1.25 : 1;
 camera.follow = player.position;
 camera.target = [player.position[0], player.position[1] + camera.height, player.position[2]];
 
@@ -79,7 +83,7 @@ function spawnPoint(): Vec3 {
   }
   return [4, 0, 4];
 }
-for (let i = 0; i < ENEMIES; i++) enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot));
+for (let i = 0; i < ENEMIES; i++) enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot, HELL ? { kind: ENEMY_KINDS.marcher } : {}));
 const lifeBars = new LifeBars(document.body);
 const cracked = document.createElement('div');
 cracked.id = 'cracked';
@@ -136,13 +140,14 @@ function showActions(): void {
     const l = hell.labels();
     const pad = gamepad.connected;
     actionBar.replaceChildren(
-      ...[[pad ? 'RT' : 'LMB', l.primary, true], [pad ? 'LT' : 'RMB', l.secondary, hell.secondary >= 0]].map(([key, text, on]) => {
+      ...([[pad ? 'RT' : 'LMB', l.primary, 1], [pad ? 'LT' : 'RMB', l.secondary, hell.secondaryCharge()]] as [string, string, number][]).map(([key, text, charge]) => {
         const el = document.createElement('span');
-        el.className = `action${on ? ' on' : ' empty'}`;
-        el.innerHTML = `<b>${key}</b> ${text}`;
+        el.className = `action${charge >= 1 ? ' on' : ' empty'}`;
+        el.innerHTML = `<b>${key}</b> ${text}<i class="charge" style="width: ${Math.round(charge * 100)}%"></i>`;
         return el;
       }),
     );
+    showGauge();
     return;
   }
   const list = actions();
@@ -168,6 +173,22 @@ function setAction(i: number): void {
   showActions();
 }
 const hell = HELL ? new Hell(arsenal, structure) : null;
+// The wave gauge down the right side: the stage, how far through it, how hot it is getting.
+const gauge = document.createElement('div');
+gauge.id = 'hellgauge';
+gauge.hidden = !HELL;
+gauge.innerHTML = '<b></b><div class="bar"><i></i></div><span></span>';
+document.body.appendChild(gauge);
+const gaugeStage = gauge.querySelector('b') as HTMLElement;
+const gaugeFill = gauge.querySelector('i') as HTMLElement;
+const gaugeNote = gauge.querySelector('span') as HTMLElement;
+function showGauge(): void {
+  if (!hell) return;
+  gaugeStage.textContent = `Stage ${hell.stage}`;
+  gaugeFill.style.height = `${Math.round(hell.stageShare * 100)}%`;
+  gauge.style.setProperty('--heat', String(hell.heat()));
+  gaugeNote.textContent = `${enemies.filter((e) => e.alive).length} / ${hell.wantEnemies()} crabs · ${hell.kills} cracked`;
+}
 setAction(0);
 let pieceCount = structure.alivePieces.length;
 structure.onChange = () => {
@@ -435,8 +456,12 @@ function frame(now: number): void {
       enemies.splice(i, 1);
       kills++;
       respawnIn = RESPAWN;
-      // Bullet Hell: now and then a cracked crab leaves a power-up where it fell.
-      if (hell && hell.onKill()) pickups.place('power', hell.dropAt(at));
+      // Bullet Hell: now and then a cracked crab leaves a power-up where it fell; every few, a new stage.
+      if (hell) {
+        const r = hell.onKill();
+        if (r.drop) pickups.place('power', [at[0], at[1], at[2]]);
+        if (r.news) say(r.news);
+      }
     }
   }
   // The lights of the fight: muzzle flashes, flame, rockets and their pops, burning pieces.
@@ -446,8 +471,9 @@ function frame(now: number): void {
   if (enemies.length < (hell ? hell.wantEnemies() : ENEMIES)) {
     respawnIn -= dt;
     if (respawnIn <= 0) {
-      enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot));
-      respawnIn = RESPAWN;
+      // Bullet Hell sends the stage's kinds (marchers in groups, a boss every fifth stage), tougher as it goes.
+      enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot, hell ? { kind: hell.nextKind(), armorScale: hell.armorScale() } : {}));
+      respawnIn = hell ? hell.respawnSeconds() : RESPAWN;
     }
   }
   lifeBars.update(camera, canvas, player, enemies, player.stamina, player.winded);

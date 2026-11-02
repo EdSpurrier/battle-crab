@@ -33,7 +33,7 @@ export class Player {
   readonly velocity: Vec3 = [0, 0, 0];
   readonly crab: Crab;
   /** Hit points: the shell's armour; at zero the crab is cracked. */
-  readonly maxHealth: number;
+  maxHealth: number;
   health: number;
   /** Seconds of invincibility left (a starfish eaten): nothing hurts, and the crab glows. */
   invincibleFor = 0;
@@ -82,10 +82,13 @@ export class Player {
   /** What is carried on the shell weighs this much: the heavier, the slower, the lower the jump and the shorter the sprint. */
   setWeight(weight: number): void {
     const f = weightFactor(weight);
-    this.speed = 4.8 * this.shell.speed * f;
+    this.speed = 4.8 * this.shell.speed * f * this.speedScale;
     this.jumpSpeed = 8 * Math.sqrt(this.shell.jump * f);
     this.staminaSeconds = STAMINA_SECONDS * f;
   }
+
+  /** Walking this many times the usual pace (a kind of crab, Bullet Hell); setWeight applies it. */
+  speedScale = 1;
 
   /** Stamina for sprinting, 0..1: spent while running, back while not; empty, the crab is winded until a third is back. */
   stamina = 1;

@@ -55,8 +55,10 @@ export interface Boost {
   rate: number;
   blast: number;
   grow: number;
+  /** Grenades: this many bomblets scatter from each burst. */
+  cluster: number;
 }
-export const plainBoost = (): Boost => ({ streams: [0], damage: 1, size: 1, rate: 1, blast: 0, grow: 1 });
+export const plainBoost = (): Boost => ({ streams: [0], damage: 1, size: 1, rate: 1, blast: 0, grow: 1, cluster: 0 });
 const NO_BOOST = plainBoost();
 
 /** The spiky ball out on its chain. */
@@ -152,6 +154,15 @@ export class Arsenal {
     });
   }
   private readonly cooldown = new Map<Mounted, number>();
+  /** The last cooldown each weapon was given, so a recharge can be shown as a share. */
+  private readonly cooldownMax = new Map<Mounted, number>();
+
+  /** How much of weapon `m`'s recharge is back, 0..1 (1: ready). */
+  readyShare(m: Mounted): number {
+    const left = this.cooldown.get(m) ?? 0;
+    const max = this.cooldownMax.get(m) ?? 1;
+    return left <= 0 ? 1 : Math.max(0, 1 - left / max);
+  }
   private readonly spinRate = new Map<Mounted, number>();
   private readonly ammo = new Map<Mounted, number>();
   private readonly knockHits = new Map<unknown, number>();
@@ -365,6 +376,7 @@ export class Arsenal {
           if (pulled && cool <= 0 && this.spend(w, 1)) {
             const b = this.boostOf(w);
             this.cooldown.set(w, 0.75 * b.rate);
+            this.cooldownMax.set(w, 0.75 * b.rate);
             w.kick = 0.8;
             this.flash(muzzle, [1, 0.8, 0.4], 0.08, 4, 20);
             for (const dir of this.fan(facing, b.streams)) {
@@ -434,6 +446,16 @@ export class Arsenal {
         const b = g.boost;
         this.splash(g.pos, GRENADE_BLAST * Math.sqrt(b.size) + b.blast, DAMAGE.grenade * b.damage);
         if (hit && hit.owner !== undefined) this.hurtOwner(hit.owner, DAMAGE.grenade * b.damage * 0.5);
+        // A cluster: bomblets scatter from the burst, each a smaller grenade on a short fuse.
+        for (let k = 0; k < b.cluster; k++) {
+          const a = Math.random() * Math.PI * 2;
+          const sp = 3 + Math.random() * 4;
+          const model = new Float32Array(16);
+          placeBall(model, g.pos, b.size * 0.6);
+          const instance: Instance = { mesh: this.grenadeMesh, model, material: this.ballMaterial };
+          this.renderer.instances.push(instance);
+          this.grenades.push({ instance, pos: [g.pos[0], g.pos[1] + 0.3, g.pos[2]], vel: [Math.cos(a) * sp, 4 + Math.random() * 3, Math.sin(a) * sp], fuse: 0.5 + Math.random() * 0.4, spin: 0, boost: { ...b, size: b.size * 0.6, damage: b.damage * 0.5, blast: b.blast * 0.5, cluster: 0 } });
+        }
         const list = this.renderer.instances;
         const k = list.indexOf(g.instance);
         if (k >= 0) list.splice(k, 1);

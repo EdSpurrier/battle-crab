@@ -44,11 +44,15 @@ src/player.ts   the player: position, facing (the camera's while moving), veloci
 src/controls.ts the two control schemes (settings or C), topdown the default: "3rd person" (mouse orbits, pointer lock) and "topdown"
                 (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;
                 Q/E turn); the third-person camera's settings are kept while in top down
-src/hell.ts     Bullet Hell (index.html?mode=hell): hellBuild (a whelk, a machine gun, tiny clampers), PRIMARY / SECONDARY
-                stage tables (cumulative; the last repeats), boostFor(table, stage) -> a weapons.ts Boost; Hell: kills,
-                onKill (a power-up drops at least every 3 cracks), powerUp (climbs a stage, the first secondary bolts a
-                cannon on with structure.pickUp), firePrimary / fireSecondary (left / right button), reset on death,
-                wantEnemies (3 + kills / 3, up to 8). The player's structure is invulnerable in this mode.
+src/hell.ts     Bullet Hell (index.html?mode=hell): hellBuild (a whelk, a machine gun and a grenade launcher, tiny
+                clampers), PRIMARY / SECONDARY stage tables (cumulative; the last repeats), boostFor(table, stage) -> a
+                weapons.ts Boost; Hell: kills, stage (one per 6 cracks), onKill (a power-up at least every 3 cracks; stage
+                news), powerUp, firePrimary / fireSecondary (left / right button; the launcher on a recharge shown as a
+                chip's charge bar), reset on death, wantEnemies (3 + stage + stage / 2, up to 12), nextKind (the stage's
+                roster: marchers in threes, a boss every fifth stage), respawnSeconds, armorScale, heat (the gauge's colour)
+src/enemyKinds.ts the kinds of opponent: random (the battle) and Bullet Hell's marcher (half size, swarms, nips), gunner,
+                skirmisher (fast, flame, darts in), bruiser (big, slow, cannon + grenades), rocketeer (far off, fireworks),
+                boss (twice size, four guns): scale, armour, speed, keep distance, range, burst / rest, weapons, tint
 src/gamepad.ts  GamepadInput: the first connected pad (standard mapping) polled each frame: left stick moves, right
                 stick faces (top down: the aim marker; 3rd person: orbits), LB / RB / LT / RT fire action slots 1-4 outright,
                 left stick pressed in runs, A jumps; main.ts merges it over the keys and mouse (PadState)
@@ -89,12 +93,15 @@ src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a 
 src/impacts.ts  World: what shots hit (the heightfield, boulders, the crabs' boxes set each frame in `moving`) with
                 surface and normal; impact effects by surface (sand, rock, shell); wreckFx for a cracked crab
 src/combat.ts   Combatant (health, hurt), DAMAGE per weapon, crabBox (a crab's hit box, owner = the combatant)
-src/enemy.ts    Enemy: a Player with a random shell and build, a blue team tint, a softer Arsenal (damage × 0.3,
-                a wandering aim error); a mind that keeps a distance, circles, fires in bursts, jumps; at 0 health it
+src/enemy.ts    Enemy: a Player of an EnemyKind (random: a random shell and build; else the kind's weapons on planks),
+                tinted, scaled (Crab.scale), a softer Arsenal; a mind that keeps the kind's distance (0: charges), circles,
+                fires all its guns in bursts, nips without guns, jumps; at 0 health it
                 collapses, bursts 2.2 s later and is `gone` (main.ts then drops it and counts the kill)
 src/lifebars.ts life bars over opponents (projected through the camera) and the player's along the bottom
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
-                procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
+                procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg;
+                `scale` draws the whole crab bigger or smaller (posed at size one, scaled about the sand under it;
+                `body` is then the scaled matrix, and crabBox / the life bars read the scale from its columns)
 src/settings.ts SettingsPanel: sections of toggles / sliders (handle-less bars with an editable number) / choices /
                 colours / buttons on live getters and setters, kept in localStorage (or not: persist false)
 src/look.ts     the Look (Tab): camera projection, field of view, ground clearance, near fade, depth of field (focus
@@ -118,15 +125,18 @@ them automatically. Keep the folder flat; a file dropped in shows on the next de
 the start and from `structure.onChange` as pieces come off.
 
 ## Bullet Hell
-A second mode on the same page (`?mode=hell`, the HUD links between them). One plain machine gun on the back, tiny
-clampers (no claws action), infinite ammunition, an invulnerable shell. Cracked opponents sometimes leave a magenta
-power-up where they fell (at least every third crack); each one taken climbs a stage on the primary (left button) or,
-once the primary has two stages, the secondary cannon (right button; the first secondary power-up bolts it on). Stages
-stack: heavier rounds, twin barrels, rapid fire, a trident at 45°, five-way, explosive rounds, a minigun rate, seven-way,
-a ring of twelve streams, then "Overkill" over and over; the cannon goes heavy shot, triple, quick reload, shrapnel,
-five barrels, doom cannon, then "Apocalypse" over and over. The guns are drawn bigger with each stage (`Mounted.grow`,
-up to 2.4). More opponents as the kills mount (3 + kills / 3, up to 8, respawning in 2.5 s). Cracked, the run is over:
-back to the plain gun, the cannon comes off. Loose weapons cannot be picked up in this mode.
+A second mode on the same page (`?mode=hell`, the HUD links between them). A machine gun (left button, bottomless) and
+a grenade launcher (right button, on a recharge: a charge bar on its chip) on the back from the start, tiny clampers (no
+claws action), an invulnerable shell, a quicker walk (speedScale 1.25), and every gun fires dead level (`Structure.flatAim`).
+Cracked opponents sometimes leave a magenta power-up where they fell (at least every third crack); each one taken climbs
+a stage on the primary or (once the primary has one) the grenades. Stages stack: heavier rounds, twin barrels, rapid
+fire, a trident at 45°, five-way, explosive rounds, a minigun rate, seven-way, a ring of twelve streams, then "Overkill"
+over and over; the grenades go bigger bang, double shot, quick recharge, cluster (bomblets), triple spread, heavy
+grenades, carpet, then "Armageddon" over and over. The guns are drawn bigger with each stage (`Mounted.grow`, up to 2.4).
+Waves: a stage every 6 cracks (the gauge down the right: the stage, a bar to the next, its colour cyan to magenta with
+the heat), more opponents each stage (up to 12), tougher (+8 % armour a stage), new kinds as the stages mount (marchers
+always, gunners from 2, skirmishers 3, bruisers 4, rocketeers 5) and a boss every fifth stage. Cracked, the run is over:
+back to the plain guns and stage one. Loose weapons cannot be picked up in this mode.
 
 ## Combat so far
 Three opponents on the beach at a time (main.ts ENEMIES), spawned at least 14 units from the player, one

@@ -1,5 +1,6 @@
 import type { Renderer, Vec3 } from 'gridfall-engine';
-import { DAMAGE, type Combatant } from './combat';
+import { type Combatant } from './combat';
+import { ENEMY_KINDS, type EnemyKind } from './enemyKinds';
 import type { Ground } from './ground';
 import { wreckFx, type World } from './impacts';
 import type { Loot } from './loot';
@@ -9,14 +10,15 @@ import { Structure } from './structure';
 import { Arsenal } from './weapons';
 
 /**
- * An opponent: the same crab, shell, deck and weapons as the player, with a random shell and a
- * random build, driven by a simple mind: close to a distance it likes, circle, face the player,
- * fire in bursts when near enough, jump now and then. Cracked at zero health: it collapses, bursts,
- * sheds its weapons onto the sand (the player can pick them up), and the beach spawns another a few
- * seconds later.
+ * An opponent: the same crab, shell, deck and weapons as the player, of a kind (enemyKinds.ts): the
+ * battle's random crabs, or Bullet Hell's marchers, gunners, skirmishers, bruisers, rocketeers and
+ * bosses, each with its own size, armour, pace, preferred distance and firing rhythm. A simple
+ * mind: close to the distance it likes, circle, face the player, fire in bursts when near enough
+ * (all its guns at once), nip when it has no guns and is close, jump now and then. Cracked at zero
+ * health: it collapses, bursts, sheds its weapons onto the sand (the player can pick them up), and
+ * the beach spawns another a few seconds later.
  */
 
-const TEAM: [number, number, number, number] = [0.55, 0.7, 1, 0.45];
 const WEAPONS = PIECES.filter((p) => p.weapon).map((p) => p.kind);
 
 /** A random build: a few planks on the deck and one or two weapons on them. */
@@ -38,15 +40,38 @@ function randomBuild(rand: () => number): ShellBuild {
   return { shell: shell.id, pieces, claws: CLAW_KINDS[Math.floor(rand() * CLAW_KINDS.length)] };
 }
 
+/** A kind's build: its weapons on metal planks across the deck, facing forward. */
+function buildFor(kind: EnemyKind): ShellBuild {
+  const shell = SHELLS.find((s) => s.id === kind.shell) ?? SHELLS[0];
+  const [cols, rows] = shell.grid;
+  const pieces: Piece[] = [];
+  const z = Math.floor(rows / 2);
+  const start = Math.max(0, Math.floor((cols - kind.weapons.length) / 2));
+  kind.weapons.forEach((w, i) => {
+    const x = Math.min(cols - 1, start + i);
+    pieces.push({ x, y: 0, z, kind: 'plank', yaw: 0, material: 'metal' });
+    pieces.push({ x, y: 1, z, kind: w, yaw: 0 });
+  });
+  return { shell: shell.id, pieces, claws: kind.claws };
+}
+
+export interface EnemyOptions {
+  kind?: EnemyKind;
+  /** Armour on top of the kind's (a wave's ramp). */
+  armorScale?: number;
+  rand?: () => number;
+}
+
 export class Enemy implements Combatant {
   readonly player: Player;
   readonly structure: Structure;
   readonly arsenal: Arsenal;
+  readonly kind: EnemyKind;
   /** How far from the target it likes to be, which way it circles, and its firing rhythm. */
   private keep: number;
   private circle = 1;
   private circleIn = 2;
-  /** Firing rhythm: fires while positive, rests until -1.3, then a new burst. The aim wanders a little. */
+  /** Firing rhythm: fires while positive, rests until -rest, then a new burst. The aim wanders a little. */
   private burst = -1;
   private errX = 0;
   private errZ = 0;
@@ -54,13 +79,21 @@ export class Enemy implements Combatant {
   private dyingFor = 0;
   gone = false;
 
-  constructor(private readonly renderer: Renderer, ground: Ground, private readonly world: World, at: Vec3, loot: Loot, rand: () => number = Math.random) {
-    const build = randomBuild(rand);
+  constructor(private readonly renderer: Renderer, ground: Ground, private readonly world: World, at: Vec3, loot: Loot, options: EnemyOptions = {}) {
+    const rand = options.rand ?? Math.random;
+    const kind = options.kind ?? ENEMY_KINDS.random;
+    this.kind = kind;
+    const build = kind.id === 'random' ? randomBuild(rand) : buildFor(kind);
     this.build = build;
-    this.player = new Player(renderer, ground, at, SHELLS.find((s) => s.id === build.shell), build.claws);
+    const shell = SHELLS.find((s) => s.id === build.shell);
+    this.player = new Player(renderer, ground, at, shell, build.claws);
+    this.player.crab.scale = kind.scale;
+    this.player.maxHealth = Math.round((shell?.armor ?? 100) * kind.armor * (options.armorScale ?? 1));
+    this.player.health = this.player.maxHealth;
+    this.player.speedScale = kind.speed;
     this.structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z), loot);
     this.player.crab.structure = this.structure;
-    this.player.crab.setTeam(TEAM);
+    this.player.crab.setTeam(kind.tint);
     // What it carries slows it; pieces shot off lighten it.
     const weigh = () => this.player.setWeight(this.structure.weight() + CLAWS[build.claws].weight);
     weigh();
@@ -68,10 +101,10 @@ export class Enemy implements Combatant {
       weigh();
       if (this.arsenal.selected >= this.structure.weapons.length) this.arsenal.selected = this.structure.weapons.length - 1;
     };
-    // Softer guns than the player's, never out of ammunition, and a worse eye: three of them share the beach.
-    this.arsenal = new Arsenal(renderer, this.structure, world, this, 0.3, true);
+    // Softer guns than the player's, never out of ammunition, and a worse eye: several of them share the beach.
+    this.arsenal = new Arsenal(renderer, this.structure, world, this, kind.damageScale, true);
     this.arsenal.selected = this.structure.weapons.length ? 0 : -1;
-    this.keep = 6 + rand() * 7;
+    this.keep = kind.id === 'random' ? 6 + rand() * 7 : kind.keep;
     this.player.blockers = world.obstacles;
   }
 
@@ -110,7 +143,7 @@ export class Enemy implements Combatant {
     if (!this.alive) {
       if (this.gone) return;
       // Keel over (the crab plays its collapse), lie a moment, then burst and go.
-      this.arsenal.trigger(false);
+      this.arsenal.releaseAll();
       this.dyingFor += dt;
       p.update(dt, [0, 0, 0], p.yaw, false);
       this.structure.update(dt);
@@ -125,6 +158,7 @@ export class Enemy implements Combatant {
       }
       return;
     }
+    const kind = this.kind;
     let dir: Vec3 = [0, 0, 0];
     let faceYaw = p.yaw;
     let run = false;
@@ -137,30 +171,34 @@ export class Enemy implements Combatant {
       const tx = dx / dist;
       const tz = dz / dist;
       faceYaw = Math.atan2(dx, dz);
-      // Close in, back off, or circle.
+      // Close in, back off, or circle (a charger never circles: it comes straight on).
       this.circleIn -= dt;
       if (this.circleIn <= 0) {
         this.circle = Math.random() < 0.5 ? 1 : -1;
         this.circleIn = 1.5 + Math.random() * 2.5;
       }
-      if (dist > this.keep + 2) dir = [tx, 0, tz];
+      if (this.keep <= 0) dir = dist > 1.6 ? [tx, 0, tz] : [0, 0, 0];
+      else if (dist > this.keep + 2) dir = [tx, 0, tz];
       else if (dist < this.keep - 2) dir = [-tx, 0, -tz];
       else dir = [tz * this.circle, 0, -tx * this.circle];
-      run = dist > this.keep + 9;
+      run = this.keep <= 0 ? dist > 6 : dist > this.keep + 9;
       jump = Math.random() < dt * 0.15;
       // Firing: in bursts, at the target with a wandering error.
       this.errX = Math.max(-2.5, Math.min(2.5, this.errX + (Math.random() - 0.5) * 5 * dt));
       this.errZ = Math.max(-2.5, Math.min(2.5, this.errZ + (Math.random() - 0.5) * 5 * dt));
       aimAt = [target.position[0] + this.errX, target.position[1] + 0.6, target.position[2] + this.errZ];
       this.burst -= dt;
-      if (this.burst <= -3) this.burst = 0.5 + Math.random() * 0.7;
-      const firing = dist < 26 && this.burst > 0;
-      if (this.arsenal.selected >= 0) this.arsenal.trigger(firing);
-      else if (firing && dist < 2.2 && Math.random() < dt * 2) {
+      if (this.burst <= -kind.rest) this.burst = kind.burst * (0.6 + Math.random() * 0.8);
+      const firing = dist < kind.range && this.burst > 0;
+      if (this.structure.weapons.length) {
+        if (kind.id === 'random') this.arsenal.trigger(firing);
+        else for (const m of this.structure.weapons) this.arsenal.fire(m, firing);
+      } else if (firing && dist < 2.2 * Math.max(1, kind.scale) && Math.random() < dt * 1.3 && CLAWS[this.build.claws].works) {
+        // A nip: half the claws' bite, by the crab's size; a swarm of small ones adds up, so each is gentler still.
         this.crab.snapNext();
-        target.hurt(CLAWS[this.build.claws].damage * 0.5);
+        target.hurt(CLAWS[this.build.claws].damage * 0.5 * kind.scale * (kind.scale < 1 ? 0.5 : 1));
       }
-    } else this.arsenal.trigger(false);
+    } else this.arsenal.releaseAll();
     p.update(dt, dir, faceYaw, true, run, jump);
     this.structure.update(dt);
     this.arsenal.update(dt, this.crab.body, aimAt);

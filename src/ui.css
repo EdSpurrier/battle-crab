@@ -105,6 +105,17 @@ canvas { display: block; width: 100%; height: 100%; }
 #actions .action.on { background: linear-gradient(180deg, rgba(79, 242, 255, 0.28), rgba(79, 242, 255, 0.1)); color: #fff; border-color: var(--cy); border-bottom-color: var(--cy); box-shadow: 0 0 14px var(--cy-faint), inset 0 0 12px var(--cy-faint); }
 #actions .action.on b { color: #fff; text-shadow: 0 0 6px var(--cy); }
 #actions .action i { font-style: normal; color: var(--ink-dim); margin-left: 6px; font-variant-numeric: tabular-nums; }
+#actions .action i.charge { position: absolute; left: 0; bottom: 0; height: 3px; margin: 0; background: var(--cy); box-shadow: 0 0 6px var(--cy-dim); transition: width 0.1s linear; }
+#actions .action.empty i.charge { background: var(--mg); box-shadow: 0 0 6px var(--mg); }
+
+/* Bullet Hell's wave gauge down the right side: the stage, a bar filling toward the next, coloured by how hot it is (--heat 0..1, cyan to magenta). */
+#hellgauge { --heat: 0; position: fixed; right: 18px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 10px 8px; pointer-events: none;
+  background: var(--plate); border: 1px solid var(--cy-faint); border-right: 2px solid color-mix(in srgb, var(--cy), var(--mg) calc(var(--heat) * 100%)); clip-path: var(--clip); }
+#hellgauge b { font: 600 11px/1.2 var(--mono); letter-spacing: 0.14em; text-transform: uppercase; color: color-mix(in srgb, var(--cy), var(--mg) calc(var(--heat) * 100%)); writing-mode: vertical-rl; transform: rotate(180deg); text-shadow: 0 0 8px var(--cy-dim); }
+#hellgauge .bar { position: relative; width: 10px; height: 180px; background: rgba(4, 10, 18, 0.7); border: 1px solid var(--cy-dim); overflow: hidden; }
+#hellgauge .bar i { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: linear-gradient(180deg, var(--mg), var(--cy)); box-shadow: 0 0 8px var(--cy-dim); transition: height 0.25s; }
+#hellgauge .bar::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(0deg, transparent 0 14px, rgba(4, 10, 18, 0.7) 14px 15px); }
+#hellgauge span { font: 10px/1.3 var(--mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-dim); writing-mode: vertical-rl; transform: rotate(180deg); }
 #actions .action.on i { color: var(--cy); }
 #actions .action.empty { color: var(--mg); border-bottom-color: var(--mg); }
 #actions .action.empty i { color: var(--mg); }

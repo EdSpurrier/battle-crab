@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, VERTEX_FLOATS, box, cross, dot, material, normalize, sub, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { Mesh, MeshBuilder, VERTEX_FLOATS, box, cross, dot, material, multiply, normalize, sub, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { CLAWS, SHELLS, type ClawKind, type ShellType } from './shell';
 import type { Structure } from './structure';
 
@@ -678,9 +678,19 @@ export class Crab {
   }
 
   /** The body's placement this frame (body space to the world). */
+  /** The body's placement in the world (scaled: the whole crab `scale` times its built size). */
   get body(): Mat4 {
-    return this.bodyModel;
+    return this.scale === 1 ? this.bodyModel : this.worldBody;
   }
+
+  /**
+   * The whole crab this many times its built size (a march crab, a boss). The pose is built at
+   * size one and scaled about the point on the sand under the body, so the feet stay on the sand.
+   */
+  scale = 1;
+  private readonly worldBody: Mat4 = new Float32Array(16);
+  private readonly scaleTmp: Mat4 = new Float32Array(16);
+  private readonly scaleMat: Mat4 = new Float32Array(16);
 
   /** A colour over the whole crab (linear rgb and how much), for telling sides apart; null for its own colours. */
   private team: [number, number, number, number] | null = null;
@@ -782,7 +792,7 @@ export class Crab {
     const roll = this.roll;
     const down = Math.max(0, this.collapsing);
     poseBody(this.bodyModel, this.centre, yaw, roll);
-    this.structure?.pose(this.bodyModel);
+    if (this.scale === 1) this.structure?.pose(this.bodyModel);
     const forward = toWorldDir([0, 0, 1], yaw);
     const sweep = down > 0 ? BLINK_SWEEP * Math.min(1, down * 1.5) : this.blink >= 0 ? BLINK_SWEEP * Math.sin(this.blink * Math.PI) : 0;
     for (const eye of this.eyes) {
@@ -829,5 +839,28 @@ export class Crab {
       const hinged = add(scale(dir, Math.cos(open)), scale(z, Math.sin(open)));
       poseAlong(claw.jawUpper.model, end, add(end, hinged), ref);
     }
+    if (this.scale !== 1) this.applyScale();
+  }
+
+  /** Scale every part about the point on the sand under the body, and the build on the back with it. */
+  private applyScale(): void {
+    const s = this.scale;
+    const px = this.centre[0];
+    const py = this.centre[1] - HEIGHT - this.lift;
+    const pz = this.centre[2];
+    const m = this.scaleMat;
+    m.fill(0);
+    m[0] = s; m[5] = s; m[10] = s; m[15] = 1;
+    m[12] = px - px * s; m[13] = py - py * s; m[14] = pz - pz * s;
+    // Several parts share one matrix (the body's): each matrix is scaled once.
+    const done = new Set<Mat4>();
+    for (const inst of this.owned) {
+      if (done.has(inst.model)) continue;
+      done.add(inst.model);
+      multiply(m, inst.model, this.scaleTmp);
+      (inst.model as Float32Array).set(this.scaleTmp);
+    }
+    this.worldBody.set(this.bodyModel);
+    this.structure?.pose(this.worldBody);
   }
 }

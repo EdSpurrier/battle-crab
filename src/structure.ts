@@ -351,6 +351,8 @@ export class Structure {
 
   /** Nothing comes off this shell (the player's in Bullet Hell: the run must not lose its only gun). */
   invulnerable = false;
+  /** Every gun fires dead level (Bullet Hell): no elevation toward the aim point. */
+  flatAim = false;
 
   /** Take `amount` off piece `i`; at nothing it is gone, and whatever it held up falls. */
   damage(i: number, amount: number): void {
@@ -483,7 +485,8 @@ export class Structure {
         const dy = ly - (t.cell[1] + t.pivot[1]);
         let pitch = Math.atan2(dy, D);
         w.inRange = true;
-        const lob = LOB_SPEED[w.piece.kind];
+        const lob = this.flatAim ? undefined : LOB_SPEED[w.piece.kind];
+        if (this.flatAim) pitch = 0;
         if (lob) {
           const v2 = lob * lob;
           const disc = v2 * v2 - GRAVITY * (GRAVITY * D * D + 2 * dy * v2);
