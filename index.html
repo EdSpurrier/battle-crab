@@ -10,7 +10,17 @@
     <canvas id="gl"></canvas>
     <div id="hud">Battle Crab · <a href="./build.html">battle shell</a> · <a href="./editor.html">map maker</a> · <a href="./models.html">models</a> · <span id="hint">click to take control</span> · <span id="stats"></span></div>
     <div id="actions" aria-label="Actions"></div>
-    <div id="crosshair" aria-hidden="true"></div>
+    <div id="crosshair" aria-hidden="true">
+      <svg viewBox="-60 -60 120 120" width="120" height="120">
+        <g class="ring"><circle r="40" fill="none" stroke-dasharray="14 10" /></g>
+        <g class="ring2"><circle r="52" fill="none" stroke-dasharray="4 26" /></g>
+        <g class="brackets" fill="none">
+          <path d="M-28,-16 V-28 H-16" /><path d="M16,-28 H28 V-16" /><path d="M28,16 V28 H16" /><path d="M-16,28 H-28 V16" />
+        </g>
+        <g class="ticks"><path d="M0,-10 V-4" /><path d="M0,4 V10" /><path d="M-10,0 H-4" /><path d="M4,0 H10" /></g>
+        <circle class="dot" r="1.6" />
+      </svg>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

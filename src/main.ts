@@ -51,6 +51,7 @@ const world = new World((x, z) => ground.heightAt(x, z));
 // The beach's rocks, shells and driftwood (the map's props); the solid ones stop shots.
 const props = new Props(renderer, (x, z) => ground.heightAt(x, z), map.props);
 world.obstacles.push(...props.obstacles());
+player.blockers = world.obstacles;
 const arsenal = new Arsenal(renderer, structure, world, player);
 camera.follow = player.position;
 camera.target = [player.position[0], player.position[1] + camera.height, player.position[2]];
@@ -242,17 +243,20 @@ function frame(now: number): void {
   const intent = controls.update(keys, player.position);
   if (player.alive) player.update(dt, intent.dir, intent.faceYaw, intent.faceAlways, intent.run, intent.jump);
   else {
-    // Cracked: a burst of shell, a few seconds down, then back at the start, whole.
+    // Cracked: the crab keels over, a burst of shell as it settles, a few seconds down, then back at the start, whole.
     if (deadFor === 0) {
-      const b = player.crab.body;
-      wreckFx(renderer, [b[12], b[13] + 0.3, b[14]]);
       arsenal.trigger(false);
       cracked.hidden = false;
     }
     player.update(dt, [0, 0, 0], player.yaw, false);
+    const was = deadFor;
     deadFor += dt;
-    cracked.innerHTML = `Cracked!<small>back on the beach in ${Math.ceil(3 - deadFor)}…</small>`;
-    if (deadFor >= 3) {
+    if (was < 1.2 && deadFor >= 1.2) {
+      const b = player.crab.body;
+      wreckFx(renderer, [b[12], b[13] + 0.3, b[14]]);
+    }
+    cracked.innerHTML = `Cracked!<small>back on the beach in ${Math.ceil(3.5 - deadFor)}…</small>`;
+    if (deadFor >= 3.5) {
       deadFor = 0;
       player.revive([map.spawn[0], 0, map.spawn[1]]);
       cracked.hidden = true;
@@ -294,12 +298,16 @@ function frame(now: number): void {
   // The opponents fight the player (none of them while the player is down); a cracked one is replaced after a while.
   for (const e of enemies) e.update(dt, player.alive ? player : null);
   for (let i = enemies.length - 1; i >= 0; i--) {
-    if (!enemies[i].alive) {
+    if (enemies[i].gone) {
       enemies.splice(i, 1);
       kills++;
       respawnIn = 4;
     }
   }
+  // The lights of the fight: muzzle flashes, flame, rockets and their pops, burning pieces.
+  renderer.lights.lights.length = 0;
+  renderer.lights.lights.push(...arsenal.lights(dt), ...structure.lights(), ...enemies.flatMap((e) => e.lights(dt)));
+  if (renderer.lights.lights.length > 48) renderer.lights.lights.length = 48;
   if (enemies.length < ENEMIES) {
     respawnIn -= dt;
     if (respawnIn <= 0) {
@@ -322,3 +330,5 @@ function frame(now: number): void {
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
+// A handle on the game for the browser console (poking at the player, the enemies, the lights).
+(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer };

@@ -48,7 +48,9 @@ export class Enemy implements Combatant {
   private burst = -1;
   private errX = 0;
   private errZ = 0;
-  private wrecked = false;
+  /** Cracked: it collapses for a moment, then bursts and is gone. */
+  private dyingFor = 0;
+  gone = false;
 
   constructor(private readonly renderer: Renderer, ground: Ground, private readonly world: World, at: Vec3, rand: () => number = Math.random) {
     const build = randomBuild(rand);
@@ -68,6 +70,12 @@ export class Enemy implements Combatant {
     this.arsenal = new Arsenal(renderer, this.structure, world, this, 0.3, true);
     this.arsenal.selected = this.structure.weapons.length ? 0 : -1;
     this.keep = 6 + rand() * 7;
+    this.player.blockers = world.obstacles;
+  }
+
+  /** The lights its firing and its fires throw. */
+  lights(dt: number) {
+    return this.gone ? [] : [...this.arsenal.lights(dt), ...this.structure.lights()];
   }
 
   private readonly build: ShellBuild;
@@ -98,12 +106,18 @@ export class Enemy implements Combatant {
   update(dt: number, target: Combatant | null): void {
     const p = this.player;
     if (!this.alive) {
-      if (!this.wrecked) {
-        this.wrecked = true;
+      if (this.gone) return;
+      // Keel over (the crab plays its collapse), lie a moment, then burst and go.
+      this.arsenal.trigger(false);
+      this.dyingFor += dt;
+      p.update(dt, [0, 0, 0], p.yaw, false);
+      this.structure.update(dt);
+      this.arsenal.update(dt, this.crab.body, null);
+      if (this.dyingFor > 2.2) {
         const b = this.crab.body;
         wreckFx(this.renderer, [b[12], b[13] + 0.3, b[14]]);
-        this.arsenal.trigger(false);
         this.dispose();
+        this.gone = true;
       }
       return;
     }

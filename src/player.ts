@@ -1,6 +1,7 @@
 import type { Renderer, Vec3 } from 'gridfall-engine';
 import { Crab } from './crab';
 import type { Ground } from './ground';
+import type { Obstacle } from './impacts';
 import { SHELLS, weightFactor, type ClawKind, type ShellType } from './shell';
 
 /**
@@ -42,6 +43,36 @@ export class Player {
     if (!this.alive || this.invincibleFor > 0) return;
     this.health = Math.max(0, this.health - amount);
     this.crab.flash();
+    if (this.health === 0) this.crab.collapse();
+  }
+
+  /** The solid things on the beach (rocks, boulders, driftwood): the crab walks round them, not through. */
+  blockers: Obstacle[] = [];
+  private readonly radius = 0.75;
+
+  /** Push the crab out of any blocker it has walked into (a round crab against turned boxes, on the ground plane). */
+  private unblock(): void {
+    for (const o of this.blockers) {
+      if (o.center[1] + o.half[1] < this.position[1] + 0.2) continue;
+      const c = Math.cos(-o.yaw);
+      const s = Math.sin(-o.yaw);
+      const dx = this.position[0] - o.center[0];
+      const dz = this.position[2] - o.center[2];
+      const lx = dx * c + dz * s;
+      const lz = -dx * s + dz * c;
+      const px = o.half[0] + this.radius - Math.abs(lx);
+      const pz = o.half[2] + this.radius - Math.abs(lz);
+      if (px <= 0 || pz <= 0) continue;
+      // Out along the shallower overlap, in the box's frame, then back to the world.
+      let ox = 0;
+      let oz = 0;
+      if (px < pz) ox = (lx >= 0 ? 1 : -1) * px;
+      else oz = (lz >= 0 ? 1 : -1) * pz;
+      const cw = Math.cos(o.yaw);
+      const sw = Math.sin(o.yaw);
+      this.position[0] += ox * cw + oz * sw;
+      this.position[2] += -ox * sw + oz * cw;
+    }
   }
 
   /** What is carried on the shell weighs this much: the heavier, the slower and the lower the jump. */
@@ -78,6 +109,7 @@ export class Player {
     this.air = 0;
     this.vy = 0;
     this.health = this.maxHealth;
+    this.crab.revive();
   }
 
   /**
@@ -114,6 +146,7 @@ export class Player {
       this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, x0 + nx * step));
       this.position[2] = Math.min(this.ground.size - margin, Math.max(margin, z0 + nz * step));
     }
+    this.unblock();
     this.position[1] = this.ground.heightAt(this.position[0], this.position[2]) + this.air;
     if (dt > 0) {
       this.velocity[0] = (this.position[0] - x0) / dt;

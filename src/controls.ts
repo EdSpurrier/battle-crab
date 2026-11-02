@@ -147,8 +147,8 @@ export class Controls {
     const a = this.aim;
     if (!a) return this.marker.mesh.setData(emptyOverlay());
     const h = (x: number, z: number) => this.ground.heightAt(x, z);
-    const white: [number, number, number, number] = [1, 1, 1, 0.95];
-    const dark: [number, number, number, number] = [0.05, 0.05, 0.05, 0.6];
+    const white: [number, number, number, number] = [0.3, 0.95, 1, 0.95];
+    const dark: [number, number, number, number] = [0.02, 0.1, 0.14, 0.7];
     const tick = (dx: number, dz: number) => band([[a[0] + dx * 0.55, 0, a[2] + dz * 0.55], [a[0] + dx * 0.95, 0, a[2] + dz * 0.95], [a[0] + dx * 0.95 + dz * 0.001, 0, a[2] + dz * 0.95 + dx * 0.001]], 0.08, white, h, 0.05);
     this.marker.mesh.setData(joinOverlays([band(ringPoints(a[0], a[2], 0.5, 32), 0.14, dark, h, 0.04), band(ringPoints(a[0], a[2], 0.5, 32), 0.07, white, h, 0.05), tick(1, 0), tick(-1, 0), tick(0, 1), tick(0, -1)]));
   }

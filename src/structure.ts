@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import type { Obstacle } from './impacts';
 import { CELL, MATERIALS, burns, cellCentre, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type ShellBuild, type ShellType } from './shell';
 
@@ -339,6 +339,17 @@ export class Structure {
     part.burning = BURN_SECONDS;
   }
 
+  /** The light the burning pieces give off. */
+  lights(): PointLight[] {
+    const out: PointLight[] = [];
+    for (const part of this.parts) {
+      if (part.dead || part.burning <= 0) continue;
+      const m = part.instance.model;
+      out.push({ x: m[12], y: m[13] + H * 2, z: m[14], radius: 5.5, r: 1, g: 0.5, b: 0.12, intensity: 16 + Math.random() * 8 });
+    }
+    return out;
+  }
+
   /** Fire and falling pieces, a frame on. */
   update(dt: number): void {
     const positions = new Map<string, number>();
@@ -435,8 +446,9 @@ export class Structure {
         const ly = target[1] - body[13];
         const dx = lx - t.cell[0];
         const dz = lz - t.cell[2];
-        const yaw = Math.atan2(dx, dz) - t.mountYaw;
-        w.wantYaw = Math.max(-TRAVERSE, Math.min(TRAVERSE, Math.atan2(Math.sin(yaw), Math.cos(yaw))));
+        // No traverse: a weapon points the way it was mounted (turn it on the build screen); only the barrel elevates.
+        w.wantYaw = 0;
+        void TRAVERSE;
         const D = Math.max(0.3, Math.hypot(dx, dz) - t.pivot[2]);
         const dy = ly - (t.cell[1] + t.pivot[1]);
         let pitch = Math.atan2(dy, D);

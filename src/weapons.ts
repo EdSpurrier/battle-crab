@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, box, material, translation, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { Mesh, MeshBuilder, box, material, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { DAMAGE, type Combatant } from './combat';
 import { impactFx, type Hit, type Obstacle, type World } from './impacts';
 import { pieceType, type PieceKind } from './shell';
@@ -89,6 +89,9 @@ export class Arsenal {
   private readonly balls: Ball[] = [];
   private readonly pending: Pending[] = [];
   private clock = 0;
+  /** Light this frame: the flame's glow while it pours, muzzle flashes and pops for a moment after. */
+  private flaming: { at: Vec3; ttl: number } | null = null;
+  private readonly flashes: { at: Vec3; color: Vec3; ttl: number; life: number; radius: number; intensity: number }[] = [];
   private readonly ballMesh: Mesh;
   private readonly spikeMesh: Mesh;
   private readonly chainMesh: Mesh;
@@ -170,6 +173,7 @@ export class Arsenal {
           if (pulled && cool <= 0 && this.spend(w, 1)) {
             this.cooldown.set(w, 1);
             w.kick = 1;
+            this.flash(muzzle, [1, 0.75, 0.35], 0.12, 8, 70);
             this.ball(muzzle, [facing[0] * CANNON_SPEED, facing[1] * CANNON_SPEED, facing[2] * CANNON_SPEED]);
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 18, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 6, dir: facing, cone: 0.35, life: 0.2, size: 0.2, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 30, color: [0.55, 0.55, 0.55], colorTo: [0.3, 0.3, 0.3], speed: 3, dir: facing, cone: 0.5, up: 0.6, life: 1.8, size: 0.35, drag: 1.2, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
@@ -194,15 +198,21 @@ export class Arsenal {
         case 'flamethrower':
           if (this.held && this.spend(w, dt)) {
             w.kick = 0.3;
-            for (const o of this.world.inCone(muzzle, facing, 4.5, 0.3, this.owner)) {
+            this.flaming = { at: [muzzle[0] + facing[0] * 3, muzzle[1] + facing[1] * 3 + 0.5, muzzle[2] + facing[2] * 3], ttl: 0.1 };
+            for (const o of this.world.inCone(muzzle, facing, 6.5, 0.36, this.owner)) {
               if (isCombatant(o)) o.hurt(DAMAGE.flamethrower * dt * this.damageScale);
               else if (isPartRef(o)) {
                 o.structure.damage(o.index, DAMAGE.flamethrower * dt * this.damageScale);
                 o.structure.ignite(o.index);
               }
             }
-            this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: Math.max(1, Math.round(900 * dt)), color: [1, 0.8, 0.3], colorTo: [0.7, 0.12, 0.02], speed: 9, dir: facing, cone: 0.14, up: 0.6, life: 0.5, size: 0.14, gravity: -2.5, drag: 1.6, fadeCurve: 'ease-out', sizeCurve: 'up', shape: 'smoke' });
-            if (Math.random() < dt * 30) this.renderer.particles.emit(muzzle[0] + facing[0] * 2, muzzle[1] + 0.4, muzzle[2] + facing[2] * 2, { count: 2, color: [0.25, 0.22, 0.2], colorTo: [0.1, 0.1, 0.1], speed: 0.8, up: 1.2, life: 1.8, size: 0.3, drag: 1, alpha: 0.4, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+            // A roaring tongue: a bright core, a broad body of flame, and smoke rolling off the end.
+            const p = this.renderer.particles;
+            // Colours above 1 are HDR: the core and the body glow through the tone map, as a real flame outshines the sun.
+            p.emit(muzzle[0], muzzle[1], muzzle[2], { count: Math.max(1, Math.round(1400 * dt)), color: [4.5, 3.8, 2], colorTo: [3.5, 1.8, 0.4], speed: 15, dir: facing, cone: 0.07, up: 0.3, life: 0.38, size: 0.45, gravity: -1, drag: 1.3, fadeCurve: 'ease-out', sizeCurve: 'up', shape: 'disc' });
+            p.emit(muzzle[0], muzzle[1], muzzle[2], { count: Math.max(1, Math.round(4000 * dt)), color: [3.2, 2, 0.6], colorTo: [1.6, 0.22, 0.03], speed: 13, dir: facing, cone: 0.2, up: 1, life: 0.75, size: 0.6, gravity: -3.5, drag: 1.5, fadeCurve: 'ease-out', sizeCurve: 'up', shape: 'smoke' });
+            p.emit(muzzle[0], muzzle[1], muzzle[2], { count: Math.max(1, Math.round(900 * dt)), color: [5, 4.5, 3], colorTo: [2.5, 1.2, 0.2], speed: 16, dir: facing, cone: 0.12, up: 0.5, life: 0.45, size: 0.12, gravity: -2, drag: 0.6, stretch: 4, fadeCurve: 'ease-out', shape: 'disc' });
+            p.emit(muzzle[0] + facing[0] * 4, muzzle[1] + facing[1] * 4 + 0.8, muzzle[2] + facing[2] * 4, { count: Math.max(1, Math.round(400 * dt)), color: [0.3, 0.26, 0.24], colorTo: [0.08, 0.08, 0.08], speed: 1.8, dir: facing, cone: 0.6, up: 1.8, life: 2.2, size: 0.8, drag: 1, alpha: 0.5, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
           }
           break;
         case 'knocker':
@@ -235,6 +245,33 @@ export class Arsenal {
   /** What the chosen slot is called (for the HUD). */
   static nameOf(m: Mounted | null): string {
     return m ? pieceType(m.piece.kind).name : 'Claws';
+  }
+
+  /** A light for a moment (a muzzle flash, a pop). */
+  private flash(at: Vec3, color: Vec3, life: number, radius: number, intensity: number): void {
+    this.flashes.push({ at: [at[0], at[1], at[2]], color, ttl: life, life, radius, intensity });
+  }
+
+  /** The lights this frame's firing throws: the flame's glow, muzzle flashes, rockets and their pops. Call after `update`. */
+  lights(dt: number): PointLight[] {
+    const out: PointLight[] = [];
+    if (this.flaming) {
+      this.flaming.ttl -= dt;
+      if (this.flaming.ttl <= 0) this.flaming = null;
+      else out.push({ x: this.flaming.at[0], y: this.flaming.at[1], z: this.flaming.at[2], radius: 10, r: 1, g: 0.5, b: 0.12, intensity: 60 + Math.random() * 25 });
+    }
+    for (let i = this.flashes.length - 1; i >= 0; i--) {
+      const f = this.flashes[i];
+      f.ttl -= dt;
+      if (f.ttl <= 0) {
+        this.flashes.splice(i, 1);
+        continue;
+      }
+      const k = f.ttl / f.life;
+      out.push({ x: f.at[0], y: f.at[1], z: f.at[2], radius: f.radius, r: f.color[0], g: f.color[1], b: f.color[2], intensity: f.intensity * k });
+    }
+    for (const r of this.rockets) out.push({ x: r.pos[0], y: r.pos[1], z: r.pos[2], radius: 4.5, r: r.color[0], g: r.color[1], b: r.color[2], intensity: 14 });
+    return out;
   }
 
   // ---------- the knocker: a pendulum, pumped while held
@@ -275,6 +312,7 @@ export class Arsenal {
         t.ball.hidden = false;
         t.chain.hidden = false;
         w.kick = 1;
+        this.flash(muzzle, [1, 0.75, 0.35], 0.1, 6, 45);
         this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 14, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 5, dir: facing, cone: 0.35, life: 0.18, size: 0.16, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
       } else if (t.phase === 'flying' || t.phase === 'landed') t.phase = 'reeling';
     }
@@ -340,6 +378,7 @@ export class Arsenal {
       const ground = this.world.segment(r.pos, [r.pos[0], r.pos[1] - 0.05, r.pos[2]], this.owner);
       if (r.life <= 0 || ground) {
         // Pop: a bright burst of its colours, glitter that falls, and a thump to whatever is close.
+        this.flash(r.pos, r.color, 0.3, 9, 80);
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 6, color: [1, 1, 0.9], colorTo: r.color, speed: 0.5, life: 0.12, size: 0.8, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 46, color: r.color, colorTo: r.colorTo, speed: 6, cone: Math.PI, life: 0.8, size: 0.09, gravity: 3, drag: 1.5, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark', stretch: 2 });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 24, color: r.colorTo, colorTo: [1, 1, 1], speed: 2.5, cone: Math.PI, life: 1.6, size: 0.06, gravity: 4, drag: 0.8, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark' });
@@ -404,6 +443,7 @@ export class Arsenal {
     const hit = this.world.raycast(muzzle, dir, GUN_RANGE, this.owner);
     const flight = (hit ? hit.distance : GUN_RANGE) / TRACER_SPEED;
     if (hit) this.pending.push({ at: this.clock + flight, hit, damage });
+    this.flash(muzzle, [1, 0.85, 0.5], 0.07, 5, 35);
     this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 1, color: [1, 0.95, 0.7], colorTo: [1, 0.7, 0.3], speed: TRACER_SPEED, dir, cone: 0, life: Math.max(0.02, flight), size: 0.11, stretch: 12, vary: 0, fadeCurve: 'none', sizeCurve: 'none', shape: 'spark' });
     this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 3, color: [1, 0.8, 0.4], colorTo: [1, 0.4, 0.1], speed: 2, dir: facing, cone: 0.6, life: 0.08, size: 0.1, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
   }
