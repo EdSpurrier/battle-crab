@@ -14,7 +14,7 @@ export interface Combatant {
 }
 
 /** How much each weapon takes off per hit (the flame per second of contact; the knocker at full swing speed; the claws by their kind, see shell.ts CLAWS). */
-export const DAMAGE = { cannon: 70, gatling: 3, machinegun: 4, flamethrower: 14, knocker: 45, spikeball: 40, fireworks: 10, claw: 20 } as const;
+export const DAMAGE = { cannon: 70, gatling: 3, machinegun: 4, flamethrower: 14, knocker: 45, spikeball: 40, fireworks: 10, grenade: 40, claw: 20 } as const;
 
 /** A crab's box for shots to meet: round the body and shell, turned with it. */
 export function crabBox(c: Combatant): Obstacle {

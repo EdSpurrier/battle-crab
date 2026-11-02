@@ -57,7 +57,7 @@ src/overlayShapes.ts  bands on the ground (rings, footprints, the aim marker) as
 src/models.ts   the model viewer (models.html): every .glb in Models/ (import.meta.glob), clips, turntable, wireframe
 src/shell.ts    the Battle Shell: 5 shell types (deck grid, speed / jump / armour, looks); materials (wood / metal /
                 stone: hp, weight, burns); piece kinds (plank, beam, joint; cannon, gatling, machine gun,
-                flamethrower, bommy knocker, spiky ball cannon, fireworks gun) with hp and weight; claw kinds (own,
+                flamethrower, bommy knocker, spiky ball cannon, fireworks gun, grenade launcher) with hp and weight; claw kinds (own,
                 tiny / medium / large / uber clampers: scale, damage, weight); a build (shell + pieces + claws);
                 cell geometry (cells may reach OVERHANG past the deck on arms), `supported` / `canPlace` (a piece
                 needs the deck's floor or a held neighbour), buildWeight / weightFactor; localStorage
@@ -71,7 +71,8 @@ src/weapons.ts  Arsenal: ammo per weapon (AMMO; refill), the chosen weapon fires
                 hitscan tracers, flame (ignites wood), the knocker (Rope: a Verlet chain of links hung from the pole's ring;
                 holding hauls the ball back, letting go swings it; hits by ball speed), the spiky ball trailing the same
                 chain (fire; a second pull winds the chain onto the drum link by link, dragging the ball home over the sand; caught
-                short it drops), fireworks rockets straight at the aim that wander and pop;
+                short it drops), fireworks rockets straight at the aim that wander and pop, grenades lobbed onto the aim
+                (GRENADE_SPEED; structure.ts LOB_SPEED solves the arc) that bounce, roll and burst on a 1.7 s fuse or on a crab;
                 chains of pieces that broke off go with them; hits hurt crabs and pieces;
                 lights(dt): the flame's glow, muzzle flashes, rockets and pops (main.ts fills renderer.lights each frame,
                 48 at most; a sunlit beach needs intensities in the tens to show); Boost per weapon (streams of yaw

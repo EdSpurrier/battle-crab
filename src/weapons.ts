@@ -2,7 +2,7 @@ import { Mesh, MeshBuilder, box, material, multiply, rotationY, translation, typ
 import { DAMAGE, type Combatant } from './combat';
 import { impactFx, type Hit, type Obstacle, type World } from './impacts';
 import { pieceType, type PieceKind } from './shell';
-import { CANNON_SPEED, isPartRef, type Mounted, type Structure } from './structure';
+import { CANNON_SPEED, GRENADE_SPEED, isPartRef, type Mounted, type Structure } from './structure';
 
 /**
  * Firing what is mounted on the shell. One weapon is selected at a time (action slots 2 to 5;
@@ -17,7 +17,9 @@ import { CANNON_SPEED, isPartRef, type Mounted, type Structure } from './structu
  *   forward, and whatever the ball meets at speed takes it;
  * - the spiky ball cannon fires a spiked ball trailing the same kind of chain; a second pull reels
  *   it back in, and it hits on the way out and on the way back;
- * - the fireworks gun lets off a handful of rockets, straight at the aim, that wander and pop.
+ * - the fireworks gun lets off a handful of rockets, straight at the aim, that wander and pop;
+ * - the grenade launcher lobs a grenade in an arc onto the aim point; it bounces and rolls, then
+ *   bursts on its fuse (or at once when it hits a crab or a piece), hurting everything near.
  * Ammunition is limited (the knocker and the spiky ball never run out); pickups refill it.
  * Hits hurt crabs and break the pieces built on their shells.
  */
@@ -80,6 +82,16 @@ interface Flail {
   drawn: number;
 }
 
+/** A grenade lobbed: it bounces about until its fuse runs out. */
+interface Grenade {
+  instance: Instance;
+  pos: Vec3;
+  vel: Vec3;
+  fuse: number;
+  spin: number;
+  boost: Boost;
+}
+
 /** A firework rocket in the air. */
 interface Rocket {
   pos: Vec3;
@@ -98,7 +110,11 @@ const SPIKE: Vec = [0.2, 0.2, 0.22];
 const TRACER_SPEED = 70;
 const GUN_RANGE = 80;
 /** How many shots (or seconds of flame) a weapon carries. */
-export const AMMO: Record<PieceKind, number> = { plank: 0, beam: 0, joint: 0, cannon: 10, gatling: 300, machinegun: 150, flamethrower: 12, knocker: Infinity, spikeball: Infinity, fireworks: 18 };
+export const AMMO: Record<PieceKind, number> = { plank: 0, beam: 0, joint: 0, cannon: 10, gatling: 300, machinegun: 150, flamethrower: 12, knocker: Infinity, spikeball: Infinity, fireworks: 18, grenade: 14 };
+/** A grenade: its fuse, the blast it makes, how much of its bounce it keeps. */
+const GRENADE_FUSE = 1.7;
+const GRENADE_BLAST = 3.2;
+const GRENADE_BOUNCE = 0.45;
 /** The spiky ball: how fast it leaves, how far its chain reaches, how fast it is reeled in. */
 const SPIKE_SPEED = 22;
 const CHAIN_REACH = 14;
@@ -142,6 +158,7 @@ export class Arsenal {
   private readonly tethers = new Map<Mounted, Tether>();
   private readonly flails = new Map<Mounted, Flail>();
   private readonly rockets: Rocket[] = [];
+  private readonly grenades: Grenade[] = [];
   private readonly balls: Ball[] = [];
   private readonly pending: Pending[] = [];
   private clock = 0;
@@ -151,6 +168,7 @@ export class Arsenal {
   private readonly ballMesh: Mesh;
   private readonly spikeMesh: Mesh;
   private readonly knockerMesh: Mesh;
+  private readonly grenadeMesh: Mesh;
   private readonly linkMesh: Mesh;
   private readonly ballMaterial = material({ roughness: 0.5, metallic: 0.5 });
 
@@ -159,6 +177,7 @@ export class Arsenal {
     this.ballMesh = new Mesh(renderer.gl, sphere(0.15, BALL));
     this.spikeMesh = new Mesh(renderer.gl, spikedBall(0.4, SPIKE));
     this.knockerMesh = new Mesh(renderer.gl, spikedBall(0.36, BALL));
+    this.grenadeMesh = new Mesh(renderer.gl, grenadeShell());
     this.linkMesh = new Mesh(renderer.gl, chainLink());
     for (const m of structure.weapons) this.ammo.set(m, AMMO[m.piece.kind]);
   }
@@ -342,6 +361,22 @@ export class Arsenal {
         case 'spikeball':
           this.spikeball(w, pulled, dt, muzzle, facing);
           break;
+        case 'grenade':
+          if (pulled && cool <= 0 && this.spend(w, 1)) {
+            const b = this.boostOf(w);
+            this.cooldown.set(w, 0.75 * b.rate);
+            w.kick = 0.8;
+            this.flash(muzzle, [1, 0.8, 0.4], 0.08, 4, 20);
+            for (const dir of this.fan(facing, b.streams)) {
+              const model = new Float32Array(16);
+              placeBall(model, muzzle, b.size);
+              const instance: Instance = { mesh: this.grenadeMesh, model, material: this.ballMaterial };
+              this.renderer.instances.push(instance);
+              this.grenades.push({ instance, pos: [muzzle[0], muzzle[1], muzzle[2]], vel: [dir[0] * GRENADE_SPEED, dir[1] * GRENADE_SPEED, dir[2] * GRENADE_SPEED], fuse: GRENADE_FUSE, spin: 0, boost: b });
+            }
+            this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 12, color: [0.6, 0.6, 0.6], colorTo: [0.35, 0.35, 0.35], speed: 2, dir: facing, cone: 0.5, life: 0.9, size: 0.2, drag: 1.2, alpha: 0.5, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+          }
+          break;
         case 'fireworks':
           if (pulled && cool <= 0 && this.spend(w, 1)) {
             this.cooldown.set(w, 0.7);
@@ -362,6 +397,54 @@ export class Arsenal {
     // Rockets and balls carry on.
     this.flyRockets(dt);
     this.flyBalls(dt);
+    this.flyGrenades(dt);
+  }
+
+  // ---------- grenades
+
+  /** Grenades arc, bounce and roll; a crab or a piece in the way sets one off at once, else the fuse does. */
+  private flyGrenades(dt: number): void {
+    for (let i = this.grenades.length - 1; i >= 0; i--) {
+      const g = this.grenades[i];
+      g.fuse -= dt;
+      g.vel[1] -= GRAVITY * dt;
+      g.spin += dt * Math.hypot(g.vel[0], g.vel[1], g.vel[2]) * 2;
+      const next: Vec3 = [g.pos[0] + g.vel[0] * dt, g.pos[1] + g.vel[1] * dt, g.pos[2] + g.vel[2] * dt];
+      const hit = this.world.segment(g.pos, next, this.owner);
+      let burst = g.fuse <= 0;
+      if (hit && hit.owner !== undefined) burst = true;
+      else if (hit) {
+        // Off the sand or a rock: the bounce keeps some of the speed, and a slow one rolls to a stop.
+        const n = hit.normal;
+        const vn = g.vel[0] * n[0] + g.vel[1] * n[1] + g.vel[2] * n[2];
+        g.vel = [(g.vel[0] - 2 * vn * n[0]) * GRENADE_BOUNCE, (g.vel[1] - 2 * vn * n[1]) * GRENADE_BOUNCE, (g.vel[2] - 2 * vn * n[2]) * GRENADE_BOUNCE];
+        g.pos = [hit.point[0] + n[0] * 0.14, hit.point[1] + n[1] * 0.14, hit.point[2] + n[2] * 0.14];
+        if (Math.abs(vn) > 2) impactFx(this.renderer, hit, 0.4);
+      } else g.pos = next;
+      const floor = this.world.heightAt(g.pos[0], g.pos[2]) + 0.13;
+      if (g.pos[1] < floor) {
+        g.pos[1] = floor;
+        g.vel[0] *= 0.96;
+        g.vel[2] *= 0.96;
+        if (g.vel[1] < 0) g.vel[1] = 0;
+      }
+      // A glint, ticking faster as the fuse runs down.
+      if (Math.random() < dt * (6 + (GRENADE_FUSE - g.fuse) * 10)) this.renderer.particles.emit(g.pos[0], g.pos[1] + 0.12, g.pos[2], { count: 1, color: [2, 0.5, 0.3], colorTo: [1, 0.2, 0.1], speed: 0.2, life: 0.12, size: 0.14, fadeCurve: 'down', shape: 'disc' });
+      if (burst) {
+        const b = g.boost;
+        this.splash(g.pos, GRENADE_BLAST * Math.sqrt(b.size) + b.blast, DAMAGE.grenade * b.damage);
+        if (hit && hit.owner !== undefined) this.hurtOwner(hit.owner, DAMAGE.grenade * b.damage * 0.5);
+        const list = this.renderer.instances;
+        const k = list.indexOf(g.instance);
+        if (k >= 0) list.splice(k, 1);
+        this.grenades.splice(i, 1);
+        continue;
+      }
+      const m = g.instance.model as Float32Array;
+      placeBall(m, g.pos, g.boost.size);
+      multiply(m, rotationY(g.spin, this.tmpB), this.tmpA);
+      m.set(this.tmpA);
+    }
   }
 
   /** What the chosen slot is called (for the HUD). */
@@ -662,12 +745,36 @@ export class Arsenal {
 
   /** Take the balls and chains off the beach (an opponent gone). */
   dispose(): void {
-    removeInstances(this.renderer, [...this.balls.map((b) => b.instance), ...[...this.tethers.values()].flatMap((t) => [t.ball, ...t.links]), ...[...this.flails.values()].flatMap((f) => [f.ball, ...f.links])]);
+    removeInstances(this.renderer, [...this.balls.map((b) => b.instance), ...this.grenades.map((g) => g.instance), ...[...this.tethers.values()].flatMap((t) => [t.ball, ...t.links]), ...[...this.flails.values()].flatMap((f) => [f.ball, ...f.links])]);
+    this.grenades.length = 0;
     this.balls.length = 0;
     this.tethers.clear();
     this.flails.clear();
     this.rockets.length = 0;
   }
+}
+
+/** A grenade: a dark green egg with a brass cap and a band. */
+function grenadeShell(): MeshData {
+  const parts = [sphere(0.13, [0.1, 0.16, 0.08], 10, 7), box(-0.04, 0.1, -0.04, 0.04, 0.17, 0.04, [0.55, 0.4, 0.12]), box(-0.135, -0.02, -0.135, 0.135, 0.02, 0.135, [0.2, 0.2, 0.2])];
+  let nv = 0;
+  let ni = 0;
+  for (const p of parts) {
+    nv += p.vertices.length;
+    ni += p.indices.length;
+  }
+  const vertices = new Float32Array(nv);
+  const indices = new Uint32Array(ni);
+  let vo = 0;
+  let io = 0;
+  for (const p of parts) {
+    vertices.set(p.vertices, vo);
+    const base = vo / 11;
+    for (let i = 0; i < p.indices.length; i++) indices[io + i] = p.indices[i] + base;
+    vo += p.vertices.length;
+    io += p.indices.length;
+  }
+  return { vertices, indices };
 }
 
 /** A cannonball's matrix: at `at`, `size` times the plain ball. */

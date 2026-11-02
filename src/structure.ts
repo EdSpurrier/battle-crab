@@ -18,6 +18,10 @@ const ELEVATE: [number, number] = [(-20 * Math.PI) / 180, (60 * Math.PI) / 180];
 const TURN_RATE = 9;
 /** A cannonball's speed: the barrel's elevation is solved so the ball comes down on the aim point. */
 export const CANNON_SPEED = 20;
+/** A grenade's: slower, so it goes up and comes down on the aim point. */
+export const GRENADE_SPEED = 15;
+/** What a weapon lobs at, by kind (anything else shoots straight). */
+export const LOB_SPEED: Partial<Record<Piece['kind'], number>> = { cannon: CANNON_SPEED, spikeball: CANNON_SPEED, grenade: GRENADE_SPEED };
 const GRAVITY = 20;
 /** The knocker's chain (cell units, before the weapon scale) and the ball on its end. */
 const CHAIN = 0.55;
@@ -164,6 +168,14 @@ function shapeOf(piece: Piece): Shape {
         moving: merge([box(-0.075, -0.075, -0.1, 0.075, 0.075, 0.24, IRON), box(-0.09, -0.09, 0.18, 0.09, 0.09, 0.24, IRON_LIGHT)]),
         pivot: [0, -H + 0.16, 0],
         muzzle: [0, -H + 0.16, 0.28],
+      };
+    case 'grenade':
+      // A short fat tube on a squat mount, a drum magazine under it, a sight on top.
+      return {
+        fixed: merge([box(-0.1, -H, -0.09, 0.1, -H + 0.07, 0.09, WOOD_DARK), box(-0.04, -H, -0.04, 0.04, 0.0, 0.04, IRON)]),
+        moving: merge([box(-0.06, -0.06, -0.08, 0.06, 0.06, 0.2, IRON), box(-0.075, -0.075, 0.17, 0.075, 0.075, 0.24, IRON_LIGHT), ellipsoid(0, -0.1, 0.02, 0.07, 0.07, 0.07, IRON_LIGHT, 10, 6), box(-0.01, 0.06, 0.05, 0.01, 0.1, 0.09, BRASS)]),
+        pivot: [0, 0.0, 0],
+        muzzle: [0, 0.0, 0.26],
       };
     case 'fireworks':
       // A rack of tubes, tilted up.
@@ -471,8 +483,9 @@ export class Structure {
         const dy = ly - (t.cell[1] + t.pivot[1]);
         let pitch = Math.atan2(dy, D);
         w.inRange = true;
-        if (w.piece.kind === 'cannon' || w.piece.kind === 'spikeball') {
-          const v2 = CANNON_SPEED * CANNON_SPEED;
+        const lob = LOB_SPEED[w.piece.kind];
+        if (lob) {
+          const v2 = lob * lob;
           const disc = v2 * v2 - GRAVITY * (GRAVITY * D * D + 2 * dy * v2);
           if (disc >= 0) pitch = Math.atan((v2 - Math.sqrt(disc)) / (GRAVITY * D));
           else {
