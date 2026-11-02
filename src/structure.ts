@@ -1,12 +1,14 @@
 import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
-import { CELL, cellCentre, pieceType, shellType, type Piece, type ShellBuild, type ShellType } from './shell';
+import type { Obstacle } from './impacts';
+import { CELL, MATERIALS, burns, cellCentre, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type ShellBuild, type ShellType } from './shell';
 
 /**
- * What is built on the shell, drawn: one mesh per piece in its cell, in body space, posed each
- * frame by the crab's body matrix. Weapons are turrets: the whole piece traverses about its
- * cell's upright axis toward the aim point and its moving part (the barrel, the gatling cluster)
- * elevates about its pivot, so a shot leaves the muzzle straight along the barrel. The moving
- * part also kicks back, spins (a gatling) or swings (the knocker) with `kick` and `spin`.
+ * What is built on the shell, drawn and kept: one mesh per piece in its cell, in body space,
+ * posed each frame by the crab's body matrix. Every piece has hit points; shot to nothing it is
+ * gone, and whatever it was holding up falls away (debris that tumbles to the sand). Wood burns.
+ * Weapons are turrets: the whole piece traverses about its cell's upright axis toward the aim
+ * point and its moving part elevates about its pivot, so a shot leaves the muzzle straight along
+ * the barrel; the knocker's ball hangs on a chain from its pole and swings as a pendulum.
  */
 
 /** How far a turret traverses from the way it is mounted (radians), how it elevates, and how quickly it turns (per second). */
@@ -16,6 +18,13 @@ const TURN_RATE = 9;
 /** A cannonball's speed: the barrel's elevation is solved so the ball comes down on the aim point. */
 export const CANNON_SPEED = 20;
 const GRAVITY = 20;
+/** The knocker's chain (cell units, before the weapon scale) and the ball on its end. */
+const CHAIN = 0.55;
+const BALL = 0.13;
+/** Fire: damage a second to a burning piece, how long a piece burns before it goes out on its own, how often it tries to spread. */
+const BURN_DPS = 7;
+const BURN_SECONDS = 9;
+const SPREAD_EVERY = 0.6;
 
 const WOOD: Vec = [0.42, 0.27, 0.13];
 const WOOD_DARK: Vec = [0.3, 0.19, 0.09];
@@ -23,27 +32,10 @@ const IRON: Vec = [0.16, 0.16, 0.18];
 const IRON_LIGHT: Vec = [0.3, 0.3, 0.33];
 const BRASS: Vec = [0.55, 0.4, 0.12];
 const TANK: Vec = [0.5, 0.08, 0.05];
+const ROCKET: Vec = [0.7, 0.15, 0.1];
 const H = CELL / 2;
 /** Weapons are drawn this many times their cell (about the cell's floor, so they still stand on it). */
 const WEAPON_SCALE = 3;
-
-/** The mesh scaled by `s` about the point (0, y0, 0). */
-function scaledMesh(data: MeshData, s: number, y0: number): MeshData {
-  const v = new Float32Array(data.vertices);
-  for (let i = 0; i < v.length; i += 11) {
-    v[i] *= s;
-    v[i + 1] = y0 + (v[i + 1] - y0) * s;
-    v[i + 2] *= s;
-  }
-  return { vertices: v, indices: data.indices };
-}
-
-function scaledShape(shape: Shape, s: number): Shape {
-  const y0 = -H;
-  const pt = (p?: [number, number, number]): [number, number, number] | undefined => (p ? [p[0] * s, y0 + (p[1] - y0) * s, p[2] * s] : undefined);
-  // The moving part is built about its pivot (which is scaled with the piece), so it scales about its own origin.
-  return { fixed: scaledMesh(shape.fixed, s, y0), moving: shape.moving ? scaledMesh(shape.moving, s, 0) : undefined, pivot: pt(shape.pivot), muzzle: pt(shape.muzzle) };
-}
 
 function ellipsoid(cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, color: Vec, segs = 10, rings = 6): MeshData {
   const b = new MeshBuilder();
@@ -85,6 +77,17 @@ function merge(parts: MeshData[]): MeshData {
   return { vertices, indices };
 }
 
+/** The mesh scaled by `s` about the point (0, y0, 0). */
+function scaledMesh(data: MeshData, s: number, y0: number): MeshData {
+  const v = new Float32Array(data.vertices);
+  for (let i = 0; i < v.length; i += 11) {
+    v[i] *= s;
+    v[i + 1] = y0 + (v[i + 1] - y0) * s;
+    v[i + 2] *= s;
+  }
+  return { vertices: v, indices: data.indices };
+}
+
 /** A piece's fixed mesh and, for a weapon, its moving part with the point it moves about (cell space: the cell's centre at the origin, the piece facing +z). */
 interface Shape {
   fixed: MeshData;
@@ -95,12 +98,23 @@ interface Shape {
   muzzle?: [number, number, number];
 }
 
-function shapeOf(kind: Piece['kind']): Shape {
-  switch (kind) {
+function scaledShape(shape: Shape, s: number): Shape {
+  const y0 = -H;
+  const pt = (p?: [number, number, number]): [number, number, number] | undefined => (p ? [p[0] * s, y0 + (p[1] - y0) * s, p[2] * s] : undefined);
+  // The moving part is built about its pivot (which is scaled with the piece), so it scales about its own origin.
+  return { fixed: scaledMesh(shape.fixed, s, y0), moving: shape.moving ? scaledMesh(shape.moving, s, 0) : undefined, pivot: pt(shape.pivot), muzzle: pt(shape.muzzle) };
+}
+
+function shapeOf(piece: Piece): Shape {
+  const m = MATERIALS[piece.material ?? 'wood'];
+  switch (piece.kind) {
     case 'plank':
-      return { fixed: merge([box(-H, -H, -H, H, H, H, WOOD), box(-H * 0.98, H - 0.012, -H * 0.98, H * 0.98, H + 0.004, H * 0.98, WOOD_DARK)]) };
+      return { fixed: merge([box(-H, -H, -H, H, H, H, m.color), box(-H * 0.98, H - 0.012, -H * 0.98, H * 0.98, H + 0.004, H * 0.98, m.dark)]) };
+    case 'beam':
+      // A bar the length of the cell along its facing, a little below the middle so a plank on it sits flush, with a cap at each end.
+      return { fixed: merge([box(-0.07, -H, -H, 0.07, -H + 0.16, H, m.color), box(-0.09, -H, -H, 0.09, -H + 0.17, -H + 0.04, m.dark), box(-0.09, -H, H - 0.04, 0.09, -H + 0.17, H, m.dark)]) };
     case 'joint':
-      return { fixed: merge([box(-0.05, -H, -0.05, 0.05, H, 0.05, WOOD_DARK), box(-H, H - 0.03, -H, H, H, H, WOOD), box(-H, -H, -H, H, -H + 0.03, H, WOOD)]) };
+      return { fixed: merge([box(-0.05, -H, -0.05, 0.05, H, 0.05, m.dark), box(-H, H - 0.03, -H, H, H, H, m.color), box(-H, -H, -H, H, -H + 0.03, H, m.color)]) };
     case 'cannon':
       return {
         fixed: merge([box(-0.11, -H, -0.1, 0.11, -H + 0.09, 0.1, WOOD_DARK), box(-0.13, -H, -0.12, -0.1, -H + 0.14, 0.12, WOOD_DARK), box(0.1, -H, -0.12, 0.13, -H + 0.14, 0.12, WOOD_DARK)]),
@@ -122,7 +136,6 @@ function shapeOf(kind: Piece['kind']): Shape {
       };
     case 'machinegun':
       return {
-        // A pedestal with a round plate; the whole gun (body, magazine, barrel) rides on a pintle at its top and elevates there.
         fixed: merge([box(-0.04, -H, -0.04, 0.04, -0.03, 0.04, IRON), ellipsoid(0, -0.03, 0, 0.07, 0.015, 0.07, IRON_LIGHT, 12, 4)]),
         moving: merge([box(-0.06, 0, -0.12, 0.06, 0.1, 0.1, IRON_LIGHT), box(-0.03, -0.09, -0.02, 0.03, 0, 0.06, BRASS), box(-0.02, 0.03, 0.1, 0.02, 0.07, 0.34, IRON), box(-0.03, 0.02, 0.28, 0.03, 0.08, 0.34, IRON_LIGHT)]),
         pivot: [0, -0.02, 0],
@@ -131,21 +144,37 @@ function shapeOf(kind: Piece['kind']): Shape {
     case 'flamethrower':
       return {
         fixed: merge([ellipsoid(0, -0.02, -0.06, 0.1, 0.11, 0.12, TANK, 12, 7), box(-0.09, -H, -0.1, 0.09, -H + 0.05, 0.08, WOOD_DARK)]),
-        // The nozzle pipe elevates about the tank's front.
         moving: merge([box(-0.025, -0.025, -0.02, 0.025, 0.025, 0.26, IRON), box(-0.045, -0.045, 0.22, 0.045, 0.045, 0.28, IRON_LIGHT)]),
         pivot: [0, 0.015, 0.04],
         muzzle: [0, 0.015, 0.33],
       };
     case 'knocker':
+      // A pole with an arm out the top; the chain and ball hang from the arm's end and swing about it (the moving part, built hanging straight down).
       return {
-        fixed: merge([box(-0.03, -H, -0.03, 0.03, H + 0.25, 0.03, WOOD_DARK), box(-0.07, -H, -0.07, 0.07, -H + 0.04, 0.07, IRON)]),
+        fixed: merge([box(-0.03, -H, -0.03, 0.03, H + 0.3, 0.03, WOOD_DARK), box(-0.025, H + 0.25, 0, 0.025, H + 0.3, 0.2, WOOD_DARK), box(-0.07, -H, -0.07, 0.07, -H + 0.04, 0.07, IRON)]),
         moving: merge([
-          box(-0.02, -0.02, 0, 0.02, 0.02, 0.3, IRON_LIGHT),
-          ellipsoid(0, 0, 0.36, 0.09, 0.09, 0.09, IRON),
-          ...[[0.1, 0, 0], [-0.1, 0, 0], [0, 0.1, 0], [0, -0.1, 0], [0, 0, 0.1]].map(([dx, dy, dz]) => box(dx - 0.02, dy - 0.02, 0.36 + dz - 0.02, dx + 0.02, dy + 0.02, 0.36 + dz + 0.02, IRON_LIGHT)),
+          box(-0.012, -CHAIN, -0.012, 0.012, 0, 0.012, IRON_LIGHT),
+          ellipsoid(0, -CHAIN - BALL * 0.6, 0, BALL, BALL, BALL, IRON),
+          ...[[BALL, 0, 0], [-BALL, 0, 0], [0, -BALL, 0], [0, 0, BALL], [0, 0, -BALL]].map(([dx, dy, dz]) => box(dx - 0.02, -CHAIN - BALL * 0.6 + dy - 0.02, dz - 0.02, dx + 0.02, -CHAIN - BALL * 0.6 + dy + 0.02, dz + 0.02, IRON_LIGHT)),
         ]),
-        pivot: [0, H + 0.22, 0],
-        muzzle: [0, H + 0.22, 0.36],
+        pivot: [0, H + 0.27, 0.2],
+        muzzle: [0, H + 0.27 - CHAIN - BALL * 0.6, 0.2],
+      };
+    case 'spikeball':
+      // A stubby mortar with a drum of chain behind it; the ball flies out of the barrel and is reeled back.
+      return {
+        fixed: merge([box(-0.12, -H, -0.1, 0.12, -H + 0.08, 0.1, WOOD_DARK), ellipsoid(0, -H + 0.16, -0.12, 0.1, 0.1, 0.06, IRON_LIGHT, 10, 6)]),
+        moving: merge([box(-0.075, -0.075, -0.1, 0.075, 0.075, 0.24, IRON), box(-0.09, -0.09, 0.18, 0.09, 0.09, 0.24, IRON_LIGHT)]),
+        pivot: [0, -H + 0.16, 0],
+        muzzle: [0, -H + 0.16, 0.28],
+      };
+    case 'fireworks':
+      // A rack of tubes, tilted up.
+      return {
+        fixed: merge([box(-0.1, -H, -0.08, 0.1, -H + 0.06, 0.08, WOOD_DARK), box(-0.02, -H, -0.02, 0.02, -H + 0.12, 0.02, IRON)]),
+        moving: merge([-0.06, -0.02, 0.02, 0.06].flatMap((x) => [0.03, -0.03].map((y) => box(x - 0.018, y - 0.018, -0.06, x + 0.018, y + 0.018, 0.2, ROCKET)))),
+        pivot: [0, -H + 0.14, 0],
+        muzzle: [0, -H + 0.14, 0.22],
       };
   }
 }
@@ -153,7 +182,7 @@ function shapeOf(kind: Piece['kind']): Shape {
 export interface Mounted {
   piece: Piece;
   index: number;
-  /** The weapon's moving part: kicked back (0..1, a recoil or a swing) and spun (radians, a gatling). */
+  /** The weapon's moving part: kicked back (0..1, a recoil) and spun (radians, a gatling). */
   kick: number;
   spin: number;
   /** The turret's traverse from the way it is mounted and its barrel's elevation (radians), eased toward what is wanted. */
@@ -163,10 +192,22 @@ export interface Mounted {
   wantPitch: number;
   /** Whether the cannon can reach the aim point at CANNON_SPEED (else it fires at its highest). */
   inRange: boolean;
-  /** After `pose`: where a shot leaves and the way the barrel points, in the world. */
+  /** The knocker: the chain's angle from hanging (radians, forward positive) and how fast it swings. */
+  swing: number;
+  swingRate: number;
+  /** After `pose`: where a shot leaves (the knocker: where the ball is) and the way the barrel points, in the world. */
   muzzle: Vec3;
   direction: Vec3;
+  /** The chain's length in the world (the knocker). */
+  chainLength: number;
 }
+
+/** A piece of a structure as something a shot can hit. */
+export interface PartRef {
+  structure: Structure;
+  index: number;
+}
+export const isPartRef = (o: unknown): o is PartRef => !!o && typeof o === 'object' && 'structure' in o && 'index' in o;
 
 interface Part {
   instance: Instance;
@@ -174,48 +215,202 @@ interface Part {
   /** A weapon's turret: the cell's centre and mounting turn (its local is remade each frame), the pivot in cell space, the muzzle from the pivot. */
   turret?: { weapon: Mounted; cell: Vec3; mountYaw: number; pivot: [number, number, number]; muzzleRel: [number, number, number] };
   moving?: { instance: Instance; kind: Piece['kind'] };
+  hp: number;
+  maxHp: number;
+  /** Seconds of fire left (0: not burning), and the time to the next try at spreading. */
+  burning: number;
+  spreadIn: number;
+  dead: boolean;
+}
+
+/** A piece that has come off: tumbling to the sand. */
+interface Debris {
+  instances: Instance[];
+  pos: Vec3;
+  vel: Vec3;
+  spin: number;
+  life: number;
 }
 
 export class Structure {
   readonly shell: ShellType;
   readonly weapons: Mounted[] = [];
+  /** Called when pieces come off (the weight and the weapons may have changed). */
+  onChange: (() => void) | null = null;
   private readonly parts: Part[] = [];
   private readonly instances: Instance[] = [];
+  private readonly debris: Debris[] = [];
   private readonly tmp: Mat4 = new Float32Array(16);
   private readonly tmp2: Mat4 = new Float32Array(16);
   private readonly tmp3: Mat4 = new Float32Array(16);
   private readonly barrel: Mat4 = new Float32Array(16);
+  private readonly bodyYawCache = { yaw: 0 };
 
-  constructor(private readonly renderer: Renderer, readonly build: ShellBuild) {
+  constructor(private readonly renderer: Renderer, readonly build: ShellBuild, private readonly groundHeight: (x: number, z: number) => number = () => 0) {
     this.shell = shellType(build.shell);
     const gl = renderer.gl;
-    const wood = material({ roughness: 0.9 });
     const metal = material({ roughness: 0.45, metallic: 0.6 });
     build.pieces.forEach((piece, index) => {
       const type = pieceType(piece.kind);
-      const shape = type.weapon ? scaledShape(shapeOf(piece.kind), WEAPON_SCALE) : shapeOf(piece.kind);
+      const shape = type.weapon ? scaledShape(shapeOf(piece), WEAPON_SCALE) : shapeOf(piece);
       const c = cellCentre(this.shell, piece.x, piece.y, piece.z);
       const mountYaw = (piece.yaw * Math.PI) / 2;
       const local = multiply(translation(c[0], c[1], c[2]), rotationY(mountYaw));
-      const mat = type.weapon ? metal : wood;
+      const m = MATERIALS[piece.material ?? 'wood'];
+      const mat = type.weapon ? metal : material({ roughness: m.roughness, metallic: m.metallic });
       const instance: Instance = { mesh: new Mesh(gl, shape.fixed), model: new Float32Array(16), material: mat };
       this.instances.push(instance);
-      const part: Part = { instance, local };
+      const hp = pieceHp(piece);
+      const part: Part = { instance, local, hp, maxHp: hp, burning: 0, spreadIn: 0, dead: false };
       if (shape.moving) {
         const mi: Instance = { mesh: new Mesh(gl, shape.moving), model: new Float32Array(16), material: mat };
         this.instances.push(mi);
         part.moving = { instance: mi, kind: piece.kind };
       }
       if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < 4) {
-        const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, muzzle: [0, 0, 0], direction: [0, 0, 1] };
+        const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, swing: 0, swingRate: 0, muzzle: [0, 0, 0], direction: [0, 0, 1], chainLength: (CHAIN + BALL * 0.6) * WEAPON_SCALE };
         this.weapons.push(weapon);
         const p = shape.pivot;
-        const m = shape.muzzle;
-        part.turret = { weapon, cell: c, mountYaw, pivot: p, muzzleRel: [m[0] - p[0], m[1] - p[1], m[2] - p[2]] };
+        const mz = shape.muzzle;
+        part.turret = { weapon, cell: c, mountYaw, pivot: p, muzzleRel: [mz[0] - p[0], mz[1] - p[1], mz[2] - p[2]] };
       }
       this.parts.push(part);
     });
     renderer.instances.push(...this.instances);
+  }
+
+  /** The pieces still on. */
+  get alivePieces(): Piece[] {
+    return this.build.pieces.filter((_, i) => !this.parts[i].dead);
+  }
+
+  /** What is still on weighs this much (the claws apart). */
+  weight(): number {
+    return this.build.pieces.reduce((w, p, i) => (this.parts[i].dead ? w : w + pieceWeight(p)), 0);
+  }
+
+  /** Hit points left of piece `i` as a share. */
+  health(i: number): number {
+    const p = this.parts[i];
+    return p && !p.dead ? p.hp / p.maxHp : 0;
+  }
+
+  /** The pieces' boxes for shots this frame (body space turned to the world), each owned by its PartRef, all `self`'s. */
+  boxes(body: Mat4, self: unknown): Obstacle[] {
+    const yaw = Math.atan2(body[8], body[10]);
+    const out: Obstacle[] = [];
+    this.parts.forEach((part, index) => {
+      if (part.dead) return;
+      const piece = this.build.pieces[index];
+      const c = cellCentre(this.shell, piece.x, piece.y, piece.z);
+      const w = transformPoint(body, c);
+      const weapon = pieceType(piece.kind).weapon;
+      const r = weapon ? H * 1.6 : H;
+      out.push({ center: [w[0], w[1] + (weapon ? H * 0.6 : 0), w[2]], half: [r, weapon ? H * 2.2 : H, r], yaw, surface: piece.kind === 'plank' || piece.kind === 'beam' || piece.kind === 'joint' ? (piece.material === 'wood' || !piece.material ? 'wood' : 'rock') : 'rock', owner: { structure: this, index } as PartRef, self });
+    });
+    return out;
+  }
+
+  /** Take `amount` off piece `i`; at nothing it is gone, and whatever it held up falls. */
+  damage(i: number, amount: number): void {
+    const part = this.parts[i];
+    if (!part || part.dead) return;
+    part.hp -= amount;
+    if (part.hp > 0) return;
+    this.drop(i);
+    // Whatever is no longer joined to the deck comes down too.
+    const held = supported(this.shell, this.build.pieces.map((p, k) => (this.parts[k].dead ? null : p)).filter((p): p is Piece => !!p));
+    // `held` indexes the live list: map back.
+    const live: number[] = [];
+    this.parts.forEach((p, k) => {
+      if (!p.dead) live.push(k);
+    });
+    live.forEach((k, liveIndex) => {
+      if (!held.has(liveIndex)) this.drop(k);
+    });
+    this.onChange?.();
+  }
+
+  /** Set piece `i` alight, if it burns. */
+  ignite(i: number): void {
+    const part = this.parts[i];
+    if (!part || part.dead || !burns(this.build.pieces[i])) return;
+    if (part.burning <= 0) part.spreadIn = SPREAD_EVERY;
+    part.burning = BURN_SECONDS;
+  }
+
+  /** Fire and falling pieces, a frame on. */
+  update(dt: number): void {
+    const positions = new Map<string, number>();
+    this.build.pieces.forEach((p, i) => {
+      if (!this.parts[i].dead) positions.set(`${p.x},${p.y},${p.z}`, i);
+    });
+    this.parts.forEach((part, i) => {
+      if (part.dead || part.burning <= 0) return;
+      part.burning -= dt;
+      const m = part.instance.model;
+      const at: Vec3 = [m[12], m[13], m[14]];
+      this.renderer.particles.emit(at[0], at[1] + H, at[2], { count: Math.max(1, Math.round(70 * dt)), color: [1, 0.75, 0.25], colorTo: [0.6, 0.1, 0.02], speed: 0.5, up: 1.6, cone: 1, life: 0.6, size: 0.16, gravity: -2, drag: 1.2, fadeCurve: 'ease-out', sizeCurve: 'up', shape: 'smoke' });
+      if (Math.random() < dt * 8) this.renderer.particles.emit(at[0], at[1] + H + 0.3, at[2], { count: 1, color: [0.25, 0.22, 0.2], colorTo: [0.1, 0.1, 0.1], speed: 0.4, up: 1, life: 2, size: 0.3, drag: 0.8, alpha: 0.45, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+      part.spreadIn -= dt;
+      if (part.spreadIn <= 0) {
+        part.spreadIn = SPREAD_EVERY;
+        const p = this.build.pieces[i];
+        for (const [dx, dy, dz] of [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]]) {
+          const j = positions.get(`${p.x + dx},${p.y + dy},${p.z + dz}`);
+          if (j !== undefined && Math.random() < 0.3) this.ignite(j);
+        }
+      }
+      this.damage(i, BURN_DPS * dt);
+    });
+    for (let k = this.debris.length - 1; k >= 0; k--) {
+      const d = this.debris[k];
+      d.vel[1] -= GRAVITY * dt;
+      d.pos[0] += d.vel[0] * dt;
+      d.pos[1] += d.vel[1] * dt;
+      d.pos[2] += d.vel[2] * dt;
+      d.spin += dt * 3;
+      d.life -= dt;
+      const g = this.groundHeight(d.pos[0], d.pos[2]);
+      if (d.pos[1] < g + 0.1) {
+        d.pos[1] = g + 0.1;
+        d.vel = [d.vel[0] * 0.5, -d.vel[1] * 0.3, d.vel[2] * 0.5];
+      }
+      const m = multiply(translation(d.pos[0], d.pos[1], d.pos[2]), multiply(rotationY(d.spin), rotationX(d.spin * 0.7)));
+      for (const inst of d.instances) (inst.model as Float32Array).set(m);
+      if (d.life <= 0) {
+        this.remove(d.instances);
+        this.debris.splice(k, 1);
+      }
+    }
+  }
+
+  /** Piece `i` comes off: its drawing becomes debris, its weapon slot goes. */
+  private drop(i: number): void {
+    const part = this.parts[i];
+    if (part.dead) return;
+    part.dead = true;
+    part.burning = 0;
+    const m = part.instance.model;
+    const pos: Vec3 = [m[12], m[13], m[14]];
+    const instances = [part.instance, ...(part.moving ? [part.moving.instance] : [])];
+    this.debris.push({ instances, pos, vel: [(Math.random() - 0.5) * 2, 1.5 + Math.random(), (Math.random() - 0.5) * 2], spin: 0, life: 3 });
+    this.renderer.particles.emit(pos[0], pos[1], pos[2], { count: 18, color: [0.6, 0.45, 0.25], colorTo: [0.4, 0.28, 0.14], speed: 3, up: 2, life: 0.9, size: 0.06, gravity: 10, shape: 'disc' });
+    const w = this.weapons.findIndex((x) => x.index === i);
+    if (w >= 0) this.weapons.splice(w, 1);
+  }
+
+  private remove(instances: Instance[]): void {
+    const gone = new Set(instances);
+    const list = this.renderer.instances;
+    let k = 0;
+    for (let n = 0; n < list.length; n++) if (!gone.has(list[n])) list[k++] = list[n];
+    list.length = k;
+    for (const inst of instances) {
+      const own = this.instances.indexOf(inst);
+      if (own >= 0) this.instances.splice(own, 1);
+      inst.mesh.dispose();
+    }
   }
 
   /**
@@ -225,14 +420,14 @@ export class Structure {
    */
   aim(body: Mat4, target: Vec3 | null, dt: number): void {
     const bodyYaw = Math.atan2(body[8], body[10]);
+    this.bodyYawCache.yaw = bodyYaw;
     const cy = Math.cos(-bodyYaw);
     const sy = Math.sin(-bodyYaw);
     for (const part of this.parts) {
       const t = part.turret;
-      if (!t) continue;
+      if (!t || part.dead) continue;
       const w = t.weapon;
       if (target) {
-        // The target in body space, then about the cell's upright axis.
         const dx0 = target[0] - body[12];
         const dz0 = target[2] - body[14];
         const lx = dx0 * cy + dz0 * sy;
@@ -242,12 +437,11 @@ export class Structure {
         const dz = lz - t.cell[2];
         const yaw = Math.atan2(dx, dz) - t.mountYaw;
         w.wantYaw = Math.max(-TRAVERSE, Math.min(TRAVERSE, Math.atan2(Math.sin(yaw), Math.cos(yaw))));
-        // Elevation from the pivot: its height on the cell, the horizontal reach to the point.
         const D = Math.max(0.3, Math.hypot(dx, dz) - t.pivot[2]);
         const dy = ly - (t.cell[1] + t.pivot[1]);
         let pitch = Math.atan2(dy, D);
         w.inRange = true;
-        if (w.piece.kind === 'cannon') {
+        if (w.piece.kind === 'cannon' || w.piece.kind === 'spikeball') {
           const v2 = CANNON_SPEED * CANNON_SPEED;
           const disc = v2 * v2 - GRAVITY * (GRAVITY * D * D + 2 * dy * v2);
           if (disc >= 0) pitch = Math.atan((v2 - Math.sqrt(disc)) / (GRAVITY * D));
@@ -256,6 +450,7 @@ export class Structure {
             w.inRange = false;
           }
         }
+        if (w.piece.kind === 'fireworks') pitch = Math.max(pitch, (35 * Math.PI) / 180);
         w.wantPitch = w.piece.kind === 'knocker' ? 0 : Math.max(ELEVATE[0], Math.min(ELEVATE[1], pitch));
       } else {
         w.wantYaw = 0;
@@ -270,15 +465,22 @@ export class Structure {
   /** Place every piece by the crab's body matrix: turrets turned and elevated, moving parts kicked, spun or swung. */
   pose(body: Mat4): void {
     for (const part of this.parts) {
+      if (part.dead) continue;
       const t = part.turret;
-      if (t) {
-        // The turret's local placement this frame: the cell, turned by the mounting and the traverse.
-        multiply(translation(t.cell[0], t.cell[1], t.cell[2], this.tmp), rotationY(t.mountYaw + t.weapon.aimYaw, this.tmp2), part.local);
-      }
+      if (t) multiply(translation(t.cell[0], t.cell[1], t.cell[2], this.tmp), rotationY(t.mountYaw + t.weapon.aimYaw, this.tmp2), part.local);
       multiply(body, part.local, part.instance.model);
       if (!t) continue;
       const w = t.weapon;
-      // The barrel's frame: at the pivot, elevated (a turn about x; positive x-turn tips +z down, so the pitch is negated).
+      if (w.piece.kind === 'knocker') {
+        // The chain hangs from the arm's end and swings about it (forward positive).
+        multiply(multiply(part.instance.model, translation(t.pivot[0], t.pivot[1], t.pivot[2], this.tmp), this.tmp2), rotationX(-w.swing, this.tmp3), this.barrel);
+        const ball = transformPoint(this.barrel, [0, -w.chainLength / WEAPON_SCALE * WEAPON_SCALE, 0]);
+        w.muzzle = [ball[0], ball[1], ball[2]];
+        const dl = Math.hypot(this.barrel[8], this.barrel[9], this.barrel[10]) || 1;
+        w.direction = [this.barrel[8] / dl, this.barrel[9] / dl, this.barrel[10] / dl];
+        if (part.moving) (part.moving.instance.model as Float32Array).set(this.barrel);
+        continue;
+      }
       multiply(multiply(part.instance.model, translation(t.pivot[0], t.pivot[1], t.pivot[2], this.tmp), this.tmp2), rotationX(-w.aimPitch, this.tmp3), this.barrel);
       const mz = transformPoint(this.barrel, t.muzzleRel);
       w.muzzle = [mz[0], mz[1], mz[2]];
@@ -287,10 +489,6 @@ export class Structure {
       if (!part.moving) continue;
       let motion: Mat4;
       switch (part.moving.kind) {
-        case 'knocker':
-          // Swings forward and down about the pole's top; built hanging out along +z, so a swing is a turn about x.
-          motion = rotationX(-0.35 + Math.sin(w.kick * Math.PI) * 1.9, this.tmp);
-          break;
         case 'gatling':
           motion = multiply(translation(0, 0, -w.kick * 0.03 * WEAPON_SCALE, this.tmp2), rotZ(w.spin), this.tmp);
           break;
@@ -302,12 +500,13 @@ export class Structure {
   }
 
   dispose(): void {
-    const gone = new Set(this.instances);
+    const gone = new Set([...this.instances, ...this.debris.flatMap((d) => d.instances)]);
     const list = this.renderer.instances;
     let k = 0;
     for (let i = 0; i < list.length; i++) if (!gone.has(list[i])) list[k++] = list[i];
     list.length = k;
-    for (const i of this.instances) i.mesh.dispose();
+    for (const i of gone) i.mesh.dispose();
+    this.debris.length = 0;
   }
 }
 
@@ -318,3 +517,5 @@ function rotZ(a: number): Mat4 {
   m[0] = c; m[1] = s; m[4] = -s; m[5] = c; m[10] = 1; m[15] = 1;
   return m;
 }
+
+export { WEAPON_SCALE };

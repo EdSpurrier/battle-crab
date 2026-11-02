@@ -3,7 +3,7 @@ import { DAMAGE, type Combatant } from './combat';
 import type { Ground } from './ground';
 import { wreckFx, type World } from './impacts';
 import { Player } from './player';
-import { PIECES, SHELLS, type Piece, type PieceKind, type ShellBuild } from './shell';
+import { CLAWS, CLAW_KINDS, MATERIAL_IDS, PIECES, SHELLS, type Piece, type PieceKind, type ShellBuild } from './shell';
 import { Structure } from './structure';
 import { Arsenal } from './weapons';
 
@@ -26,13 +26,14 @@ function randomBuild(rand: () => number): ShellBuild {
   for (let z = 0; z < rows; z++) for (let x = 0; x < cols; x++) spots.push([x, z]);
   spots.sort(() => rand() - 0.5);
   const planks = 2 + Math.floor(rand() * 3);
-  for (let i = 0; i < planks && i < spots.length; i++) pieces.push({ x: spots[i][0], y: 0, z: spots[i][1], kind: 'plank', yaw: 0 });
+  const material = MATERIAL_IDS[Math.floor(rand() * MATERIAL_IDS.length)];
+  for (let i = 0; i < planks && i < spots.length; i++) pieces.push({ x: spots[i][0], y: 0, z: spots[i][1], kind: 'plank', yaw: 0, material });
   const guns = 1 + Math.floor(rand() * 2);
   for (let i = 0; i < guns && i < planks; i++) {
     const kind: PieceKind = WEAPONS[Math.floor(rand() * WEAPONS.length)];
     pieces.push({ x: spots[i][0], y: 1, z: spots[i][1], kind, yaw: 0 });
   }
-  return { shell: shell.id, pieces };
+  return { shell: shell.id, pieces, claws: CLAW_KINDS[Math.floor(rand() * CLAW_KINDS.length)] };
 }
 
 export class Enemy implements Combatant {
@@ -51,15 +52,25 @@ export class Enemy implements Combatant {
 
   constructor(private readonly renderer: Renderer, ground: Ground, private readonly world: World, at: Vec3, rand: () => number = Math.random) {
     const build = randomBuild(rand);
-    this.player = new Player(renderer, ground, at, SHELLS.find((s) => s.id === build.shell));
-    this.structure = new Structure(renderer, build);
+    this.build = build;
+    this.player = new Player(renderer, ground, at, SHELLS.find((s) => s.id === build.shell), build.claws);
+    this.structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z));
     this.player.crab.structure = this.structure;
     this.player.crab.setTeam(TEAM);
-    // Softer guns than the player's, and a worse eye: three of them share the beach.
-    this.arsenal = new Arsenal(renderer, this.structure, world, this, 0.3);
+    // What it carries slows it; pieces shot off lighten it.
+    const weigh = () => this.player.setWeight(this.structure.weight() + CLAWS[build.claws].weight);
+    weigh();
+    this.structure.onChange = () => {
+      weigh();
+      if (this.arsenal.selected >= this.structure.weapons.length) this.arsenal.selected = this.structure.weapons.length - 1;
+    };
+    // Softer guns than the player's, never out of ammunition, and a worse eye: three of them share the beach.
+    this.arsenal = new Arsenal(renderer, this.structure, world, this, 0.3, true);
     this.arsenal.selected = this.structure.weapons.length ? 0 : -1;
     this.keep = 6 + rand() * 7;
   }
+
+  private readonly build: ShellBuild;
 
   get crab() {
     return this.player.crab;
@@ -129,15 +140,17 @@ export class Enemy implements Combatant {
       if (this.arsenal.selected >= 0) this.arsenal.trigger(firing);
       else if (firing && dist < 2.2 && Math.random() < dt * 2) {
         this.crab.snapNext();
-        target.hurt(DAMAGE.claw * 0.5);
+        target.hurt(CLAWS[this.build.claws].damage * 0.5);
       }
     } else this.arsenal.trigger(false);
     p.update(dt, dir, faceYaw, true, run, jump);
+    this.structure.update(dt);
     this.arsenal.update(dt, this.crab.body, aimAt);
   }
 
   /** Take it off the beach. */
   dispose(): void {
+    this.arsenal.dispose();
     this.structure.dispose();
     this.crab.dispose();
   }
