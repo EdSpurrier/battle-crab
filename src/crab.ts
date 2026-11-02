@@ -64,6 +64,13 @@ const LID_REACH = 0.15;
 /** In the air the feet tuck in under the body: this share of the way from hip to rest spot, this far below the body's centre. */
 const TUCK = 0.7;
 const TUCK_DROP = 0.3;
+/**
+ * On a slope the body rides HEIGHT above the highest ground under its feet's spots (never lower
+ * than over its own cell), up to this much higher, eased; the claws are held at least this far
+ * above the ground under and just ahead of them.
+ */
+const LIFT_MAX = 1;
+const CLAW_CLEAR = 0.3;
 
 // ---------- small vector helpers (the engine's math gives normalize / cross / dot / sub)
 
@@ -238,6 +245,8 @@ export class Crab {
   private phase = 0;
   private readonly centre: Vec3 = [0, HEIGHT, 0];
   private lastVelocity: Vec3 = [0, 0, 0];
+  /** How much higher than HEIGHT the body rides for the ground under its feet (a slope). */
+  private lift = 0;
   /** Where the eyes are looking (both the same way): an offset the pupils settle to, picked afresh now and then when idle. */
   private gaze: [number, number] = [0, 0];
   private glanceIn = 1;
@@ -364,7 +373,17 @@ export class Crab {
     this.phase += dt * (1.5 + speed * 3);
     this.centre[0] = at[0];
     this.centre[2] = at[2];
-    this.centre[1] = at[1] + HEIGHT;
+    // On a slope the body stays HEIGHT above the highest ground under its feet's spots, so the uphill
+    // legs do not fold into the hill; eased, so a step onto a rise is a rise and not a pop.
+    const base = this.ground(at[0], at[2]);
+    let top = base;
+    for (const leg of this.legs) {
+      const p = toWorld(leg.rest, [at[0], 0, at[2]], yaw);
+      top = Math.max(top, this.ground(p[0], p[2]));
+    }
+    const wantLift = Math.min(LIFT_MAX, Math.max(0, top - base));
+    this.lift += (wantLift - this.lift) * (1 - Math.exp(-8 * dt));
+    this.centre[1] = at[1] + HEIGHT + this.lift;
     this.wobbleEyes(dt, yaw, velocity);
     for (const claw of this.claws) {
       if (claw.snap < 0) continue;
@@ -534,6 +553,9 @@ export class Crab {
       const { reach, open } = claw.snap >= 0 ? nip(claw.snap) : { reach: 0, open: JAW_OPEN };
       const rest: Vec3 = [claw.rest[0] - claw.side * reach * 0.15, claw.rest[1] + sway + reach * 0.1, claw.rest[2] + sway * 0.5 + reach * SNAP_REACH];
       const target = toWorld(rest, this.centre, yaw);
+      // Held clear of the ground: under the wrist and under the pincer's tip ahead of it (a mound in front).
+      const floor = Math.max(this.ground(target[0], target[2]), this.ground(target[0] + forward[0] * 0.65, target[2] + forward[2] * 0.65)) + CLAW_CLEAR;
+      if (target[1] < floor) target[1] = floor;
       const { joint, end } = twoBone(shoulder, target, claw.l1, claw.l2, toWorldDir(claw.pole, yaw));
       poseAlong(claw.upper.model, shoulder, joint, forward);
       poseAlong(claw.lower.model, joint, end, forward);
