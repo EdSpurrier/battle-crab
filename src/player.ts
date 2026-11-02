@@ -19,7 +19,7 @@ export class Player {
   /** How fast it turns to face a new direction (per second; higher is snappier). */
   turnRate = 9;
   /** A jump's take-off speed (units a second, up) and the gravity that brings it down. */
-  jumpSpeed = 6.5;
+  jumpSpeed = 8;
   gravity = 20;
   /** Height above the ground while jumping, and the speed up. */
   air = 0;
