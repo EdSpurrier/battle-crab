@@ -32,7 +32,18 @@ const BODY: Vec = [0.5, 0.08, 0.03];
 const LEG: Vec = [0.42, 0.07, 0.03];
 const SHELL: Vec = [0.36, 0.24, 0.12];
 const SHELL_LIGHT: Vec = [0.42, 0.29, 0.15];
-const EYE: Vec = [0.02, 0.02, 0.02];
+const EYE_WHITE: Vec = [0.92, 0.92, 0.9];
+const PUPIL: Vec = [0.015, 0.015, 0.015];
+/** Googly eyes: the eyeball's radius, how far across it the pupil may slide (a share of the radius), its spring and damping, how hard a jolt moves it. */
+const EYE_RADIUS = 0.175;
+const PUPIL_RADIUS = 0.085;
+const PUPIL_RANGE = 0.55;
+const PUPIL_SPRING = 30;
+const PUPIL_DAMPING = 5;
+const PUPIL_JOLT = 0.06;
+/** In the air the feet tuck in under the body: this share of the way from hip to rest spot, this far below the body's centre. */
+const TUCK = 0.7;
+const TUCK_DROP = 0.3;
 
 // ---------- small vector helpers (the engine's math gives normalize / cross / dot / sub)
 
@@ -161,14 +172,26 @@ interface Claw {
   pincer: Instance;
 }
 
+/** A googly eye: the eyeball's centre in body space and a pupil that slides about on it (offset and speed across and up, as shares of the radius). */
+interface Eye {
+  centre: Vec3;
+  pupil: Instance;
+  ox: number;
+  oy: number;
+  vx: number;
+  vy: number;
+}
+
 export class Crab {
   private readonly legs: Leg[] = [];
   private readonly claws: Claw[] = [];
-  /** Body, shell and eyes: built in body space, all placed by one matrix. */
+  private readonly eyes: Eye[] = [];
+  /** Body, shell and eyeballs: built in body space, all placed by one matrix. */
   private readonly bodyModel: Mat4 = new Float32Array(16);
   private readonly ground: GroundHeight;
   private phase = 0;
   private readonly centre: Vec3 = [0, HEIGHT, 0];
+  private lastVelocity: Vec3 = [0, 0, 0];
 
   constructor(renderer: Renderer, ground: GroundHeight, at: Vec3, yaw: number) {
     this.ground = ground;
@@ -190,10 +213,10 @@ export class Crab {
     fixed(ellipsoid(0, 0.3, -0.3, 0.62, 0.52, 0.75, SHELL, 14, 8), shellSkin);
     fixed(ellipsoid(-0.3, 0.62, -0.75, 0.4, 0.36, 0.42, SHELL_LIGHT, 12, 6), shellSkin);
     fixed(ellipsoid(-0.58, 0.9, -0.95, 0.22, 0.2, 0.24, SHELL, 10, 5), shellSkin);
-    // Eye stalks and eyes.
+    // Eye stalks and big googly eyes: a white ball on each stalk, a pupil that slides about on it.
     for (const s of [-1, 1]) {
       const base: Vec3 = [s * 0.14, 0.08, 0.42];
-      const tip: Vec3 = [s * 0.2, 0.42, 0.55];
+      const tip: Vec3 = [s * 0.27, 0.5, 0.52];
       const b = new MeshBuilder();
       const d = normalize(sub(tip, base));
       const side = scale(normalize(cross(d, [0, 0, 1])), 0.025);
@@ -205,7 +228,10 @@ export class Crab {
       q(corner(base, 1, -1), corner(base, 1, 1), corner(tip, 1, 1), corner(tip, 1, -1));
       q(corner(base, -1, 1), corner(base, -1, -1), corner(tip, -1, -1), corner(tip, -1, 1));
       fixed(b.build());
-      fixed(ellipsoid(tip[0], tip[1], tip[2], 0.07, 0.07, 0.07, EYE, 8, 5));
+      const eyeCentre: Vec3 = [tip[0] + s * 0.03, tip[1] + EYE_RADIUS * 0.7, tip[2] + 0.02];
+      fixed(ellipsoid(eyeCentre[0], eyeCentre[1], eyeCentre[2], EYE_RADIUS, EYE_RADIUS, EYE_RADIUS, EYE_WHITE, 14, 8));
+      // The pupil: a flat disc, posed on the eyeball's surface each frame (built along +y: poseAlong stands it on its direction).
+      this.eyes.push({ centre: eyeCentre, pupil: part(ellipsoid(0, 0, 0, PUPIL_RADIUS, 0.03, PUPIL_RADIUS, PUPIL, 12, 4)), ox: 0, oy: 0, vx: 0, vy: 0 });
     }
 
     // Three pairs of walking legs: front legs splay forward, back legs back; knees up and out.
@@ -267,15 +293,28 @@ export class Crab {
   }
 
   /**
-   * A frame: `at` is the crab's position on the sand, `yaw` which way it faces (the camera's),
-   * `velocity` how it is moving in the world.
+   * A frame: `at` is the crab's position (on the sand, or above it in a jump), `yaw` which way it
+   * faces, `velocity` how it is moving in the world; `airborne` while it jumps (the feet tuck in).
    */
-  update(dt: number, at: Vec3, yaw: number, velocity: Vec3): void {
+  update(dt: number, at: Vec3, yaw: number, velocity: Vec3, airborne = false): void {
     const speed = Math.hypot(velocity[0], velocity[2]);
     this.phase += dt * (1.5 + speed * 3);
     this.centre[0] = at[0];
     this.centre[2] = at[2];
     this.centre[1] = at[1] + HEIGHT;
+    this.wobbleEyes(dt, yaw, velocity);
+
+    if (airborne) {
+      // Feet drawn in under the body, no stepping; on landing they are near their spots and the gait takes over.
+      const k = 1 - Math.exp(-14 * dt);
+      for (const leg of this.legs) {
+        leg.t = -1;
+        const tuck = toWorld([leg.hip[0] + (leg.rest[0] - leg.hip[0]) * TUCK, -TUCK_DROP, leg.hip[2] + (leg.rest[2] - leg.hip[2]) * TUCK], this.centre, yaw);
+        leg.foot = mix(leg.foot, tuck, k);
+      }
+      this.pose(yaw, speed);
+      return;
+    }
 
     // Which group of legs may step: one group at a time, the next allowed to start once the first
     // is most of the way down (at a run the cadence has to be quick). Steps shorten with speed.
@@ -341,9 +380,54 @@ export class Crab {
     this.pose(yaw, speed);
   }
 
+  /**
+   * Googly eyes: each pupil is a weight on a spring in the eyeball, jolted the other way whenever the
+   * crab speeds up, slows, turns or jumps, and settling back to looking forward.
+   */
+  private wobbleEyes(dt: number, yaw: number, velocity: Vec3): void {
+    if (dt <= 0) return;
+    // The change in velocity since last frame, in the crab's own frame (x: its left, y: up, z: forward).
+    const ax = (velocity[0] - this.lastVelocity[0]) / dt;
+    const ay = (velocity[1] - this.lastVelocity[1]) / dt;
+    const az = (velocity[2] - this.lastVelocity[2]) / dt;
+    this.lastVelocity = [velocity[0], velocity[1], velocity[2]];
+    const s = Math.sin(yaw);
+    const c = Math.cos(yaw);
+    const sideways = ax * c - az * s;
+    const forwardA = ax * s + az * c;
+    for (const eye of this.eyes) {
+      // Accelerating forward throws the pupil back and down a little; a sideways jolt, across; a jump, down then up.
+      const fx = -sideways * PUPIL_JOLT - eye.ox * PUPIL_SPRING - eye.vx * PUPIL_DAMPING;
+      const fy = (-ay - forwardA * 0.5) * PUPIL_JOLT - eye.oy * PUPIL_SPRING - eye.vy * PUPIL_DAMPING;
+      eye.vx += fx * dt;
+      eye.vy += fy * dt;
+      eye.ox += eye.vx * dt;
+      eye.oy += eye.vy * dt;
+      const r = Math.hypot(eye.ox, eye.oy);
+      if (r > PUPIL_RANGE) {
+        eye.ox *= PUPIL_RANGE / r;
+        eye.oy *= PUPIL_RANGE / r;
+        // Hitting the rim: stop going further, keep the slide along it.
+        const dot = eye.vx * eye.ox + eye.vy * eye.oy;
+        if (dot > 0) {
+          eye.vx -= (dot * eye.ox) / (PUPIL_RANGE * PUPIL_RANGE);
+          eye.vy -= (dot * eye.oy) / (PUPIL_RANGE * PUPIL_RANGE);
+        }
+      }
+    }
+  }
+
   private pose(yaw: number, speed: number): void {
     poseBody(this.bodyModel, this.centre, yaw);
     const forward = toWorldDir([0, 0, 1], yaw);
+    for (const eye of this.eyes) {
+      // The pupil sits on the eyeball's surface, forward of centre, slid by its offset.
+      const dirLocal = normalize([eye.ox, eye.oy, 1]);
+      const dir = toWorldDir(dirLocal, yaw);
+      const on = toWorld(eye.centre, this.centre, yaw);
+      const at = add(on, scale(dir, EYE_RADIUS - 0.012));
+      poseAlong(eye.pupil.model, at, add(at, dir), [0, 1, 0]);
+    }
     for (const leg of this.legs) {
       const hip = toWorld(leg.hip, this.centre, yaw);
       const { joint, end } = twoBone(hip, leg.foot, leg.l1, leg.l2, toWorldDir(leg.pole, yaw));
