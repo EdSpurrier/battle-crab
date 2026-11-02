@@ -12,7 +12,7 @@ forked per game.
 ## Commands
 ```bash
 npm install          # installs gridfall-engine from GitHub at the tag in package.json (and builds it)
-npm run dev          # http://localhost:5182 (the game), /build.html (the Battle Shell), /editor.html (the map maker), /models.html (models)
+npm run dev          # http://localhost:5182 (the battle), /?mode=hell (Bullet Hell), /build.html (the Battle Shell), /editor.html (the map maker), /models.html (models)
 npm run dev:engine   # the same, but on ../gridfall-engine's source (an engine feature being built next door)
 npm run typecheck    # tsc --noEmit
 npm run build        # typecheck + vite build
@@ -44,6 +44,11 @@ src/player.ts   the player: position, facing (the camera's while moving), veloci
 src/controls.ts the two control schemes (settings or C), topdown the default: "3rd person" (mouse orbits, pointer lock) and "topdown"
                 (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;
                 Q/E turn); the third-person camera's settings are kept while in top down
+src/hell.ts     Bullet Hell (index.html?mode=hell): hellBuild (a whelk, a machine gun, tiny clampers), PRIMARY / SECONDARY
+                stage tables (cumulative; the last repeats), boostFor(table, stage) -> a weapons.ts Boost; Hell: kills,
+                onKill (a power-up drops at least every 3 cracks), powerUp (climbs a stage, the first secondary bolts a
+                cannon on with structure.pickUp), firePrimary / fireSecondary (left / right button), reset on death,
+                wantEnemies (3 + kills / 3, up to 8). The player's structure is invulnerable in this mode.
 src/gamepad.ts  GamepadInput: the first connected pad (standard mapping) polled each frame: left stick moves, right
                 stick faces (top down: the aim marker; 3rd person: orbits), LB / RB / LT / RT fire action slots 1-4 outright,
                 left stick pressed in runs, A jumps; main.ts merges it over the keys and mouse (PadState)
@@ -69,11 +74,13 @@ src/weapons.ts  Arsenal: ammo per weapon (AMMO; refill), the chosen weapon fires
                 short it drops), fireworks rockets straight at the aim that wander and pop;
                 chains of pieces that broke off go with them; hits hurt crabs and pieces;
                 lights(dt): the flame's glow, muzzle flashes, rockets and pops (main.ts fills renderer.lights each frame,
-                48 at most; a sunlit beach needs intensities in the tens to show)
+                48 at most; a sunlit beach needs intensities in the tens to show); Boost per weapon (streams of yaw
+                offsets, damage / size / rate multipliers, a splash radius, grow) for the machine gun, gatling and cannon
 src/loot.ts     Loot: what came off any shell and lies on the sand. Rubble tumbles, lies 25 s and sinks; a weapon
                 rights itself, bobs under a cyan pulse (lights()) and is picked up by walking over it with a slot and a
                 cell free (main.ts: structure.pickUp; a notice when it does not fit); at most 12 lie about
-src/pickups.ts  ammo crates (refill), health boxes (half back), starfish (8 s invincible); bob, taken by walking over
+src/pickups.ts  ammo crates (refill), health boxes (half back), starfish (8 s invincible); bob, taken by walking over;
+                power-ups (Bullet Hell) placed where a crab cracked (place), lit (lights), outside the beach's own five
 src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a lit cell under the pointer; left
                 places, right removes, R turns; four action slots (MAX_ACTIONS): the claws take the first when they can
                 bite (CLAWS[k].works), weapons the rest in placement order; the tiny clampers cannot bite and free a
@@ -108,6 +115,17 @@ them automatically. Keep the folder flat; a file dropped in shows on the next de
 ## Weight
 `Player.setWeight(structure.weight() + claws)`: speed and jump scale by `weightFactor` (halved at 45). Called at
 the start and from `structure.onChange` as pieces come off.
+
+## Bullet Hell
+A second mode on the same page (`?mode=hell`, the HUD links between them). One plain machine gun on the back, tiny
+clampers (no claws action), infinite ammunition, an invulnerable shell. Cracked opponents sometimes leave a magenta
+power-up where they fell (at least every third crack); each one taken climbs a stage on the primary (left button) or,
+once the primary has two stages, the secondary cannon (right button; the first secondary power-up bolts it on). Stages
+stack: heavier rounds, twin barrels, rapid fire, a trident at 45°, five-way, explosive rounds, a minigun rate, seven-way,
+a ring of twelve streams, then "Overkill" over and over; the cannon goes heavy shot, triple, quick reload, shrapnel,
+five barrels, doom cannon, then "Apocalypse" over and over. The guns are drawn bigger with each stage (`Mounted.grow`,
+up to 2.4). More opponents as the kills mount (3 + kills / 3, up to 8, respawning in 2.5 s). Cracked, the run is over:
+back to the plain gun, the cannon comes off. Loose weapons cannot be picked up in this mode.
 
 ## Combat so far
 Three opponents on the beach at a time (main.ts ENEMIES), spawned at least 14 units from the player, one

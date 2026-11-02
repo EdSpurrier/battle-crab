@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, scaling, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { shatter, type Obstacle } from './impacts';
 import type { Loot } from './loot';
 import { CELL, MATERIALS, burns, canPlace, cellCentre, maxWeapons, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type PieceKind, type ShellBuild, type ShellType } from './shell';
@@ -196,6 +196,8 @@ export interface Mounted {
   direction: Vec3;
   /** The chain's length in the world (the knocker). */
   chainLength: number;
+  /** How much bigger than built the gun is drawn (Bullet Hell power-ups). */
+  grow: number;
 }
 
 /** A piece of a structure as something a shot can hit. */
@@ -265,7 +267,7 @@ export class Structure {
         part.moving = { instance: mi, kind: piece.kind };
       }
       if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < maxWeapons(build.claws)) {
-        const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, anchor: [0, 0, 0], muzzle: [0, 0, 0], direction: [0, 0, 1], chainLength: (CHAIN + BALL * 0.6) * WEAPON_SCALE };
+        const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, anchor: [0, 0, 0], muzzle: [0, 0, 0], direction: [0, 0, 1], chainLength: (CHAIN + BALL * 0.6) * WEAPON_SCALE, grow: 1 };
         this.weapons.push(weapon);
         const p = shape.pivot;
         const mz = shape.muzzle;
@@ -335,10 +337,13 @@ export class Structure {
     return out;
   }
 
+  /** Nothing comes off this shell (the player's in Bullet Hell: the run must not lose its only gun). */
+  invulnerable = false;
+
   /** Take `amount` off piece `i`; at nothing it is gone, and whatever it held up falls. */
   damage(i: number, amount: number): void {
     const part = this.parts[i];
-    if (!part || part.dead) return;
+    if (!part || part.dead || this.invulnerable) return;
     part.hp -= amount;
     if (part.hp > 0) return;
     this.drop(i);
@@ -505,7 +510,7 @@ export class Structure {
         continue;
       }
       multiply(multiply(part.instance.model, translation(t.pivot[0], t.pivot[1], t.pivot[2], this.tmp), this.tmp2), rotationX(-w.aimPitch, this.tmp3), this.barrel);
-      const mz = transformPoint(this.barrel, t.muzzleRel);
+      const mz = transformPoint(this.barrel, w.grow === 1 ? t.muzzleRel : [t.muzzleRel[0] * w.grow, t.muzzleRel[1] * w.grow, t.muzzleRel[2] * w.grow]);
       w.muzzle = [mz[0], mz[1], mz[2]];
       const dl = Math.hypot(this.barrel[8], this.barrel[9], this.barrel[10]) || 1;
       w.direction = [this.barrel[8] / dl, this.barrel[9] / dl, this.barrel[10] / dl];
@@ -518,6 +523,7 @@ export class Structure {
         default:
           motion = translation(0, 0, -w.kick * 0.09 * WEAPON_SCALE, this.tmp);
       }
+      if (w.grow !== 1) motion = multiply(motion, scaling(w.grow, w.grow, w.grow));
       multiply(this.barrel, motion, part.moving.instance.model);
     }
   }
