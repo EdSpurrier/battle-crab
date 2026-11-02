@@ -315,7 +315,7 @@ function frame(now: number): void {
       respawnIn = 4;
     }
   }
-  lifeBars.update(camera, canvas, player, enemies);
+  lifeBars.update(camera, canvas, player, enemies, player.stamina, player.winded);
   camera.update(dt);
   look.update();
   renderer.time = now / 1000;

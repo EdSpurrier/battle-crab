@@ -38,6 +38,11 @@ export class World {
 
   constructor(private readonly groundHeight: (x: number, z: number) => number) {}
 
+  /** The sand's height at x, z. */
+  heightAt(x: number, z: number): number {
+    return this.groundHeight(x, z);
+  }
+
   /** The first thing a ray meets within `maxDistance` (never `ignore`'s own box), or null. */
   raycast(from: Vec3, dir: Vec3, maxDistance: number, ignore?: unknown): Hit | null {
     let best: Hit | null = this.groundHit(from, dir, maxDistance);
@@ -178,6 +183,43 @@ export function wreckFx(renderer: Renderer, at: Vec3): void {
 }
 
 /** The look of a hit: `size` 1 for a bullet, about 4 for a cannonball. */
+/** What a built piece is made of, for the debris it sheds. */
+export type Stuff = 'wood' | 'metal' | 'stone';
+
+/**
+ * A piece shedding what it is made of: a blow (`size` about 1, along `dir`) or the whole piece breaking up
+ * (`size` 3, every way). Wood: splinters, shards and chunks; metal: sparks, shards, bolts; stone: chips and grit
+ * in a cloud of dust. Everything falls under gravity and settles for a moment on the sand.
+ */
+export function shatter(renderer: Renderer, at: Vec3, stuff: Stuff, size: number, dir?: Vec3): void {
+  const [x, y, z] = at;
+  const p = renderer.particles;
+  // No direction: the emitter flings every way (a piece breaking up); with one, a wide cone about it.
+  const all = !dir;
+  const d = dir;
+  const cone = 0.75;
+  const up = all ? 1.2 : 0.3;
+  const n = Math.round(14 * size);
+  if (stuff === 'wood') {
+    // Long splinters, flat shards that tumble, a few fat chunks, and a cloud of sawdust.
+    p.emit(x, y, z, { count: n * 2, color: [0.62, 0.44, 0.2], colorTo: [0.42, 0.27, 0.1], speed: 4 + 2 * size, dir: d, cone, up, life: 1.1 + 0.2 * size, size: 0.05 + 0.02 * size, gravity: 12, drag: 0.4, stretch: 4, shape: 'spark' });
+    p.emit(x, y, z, { count: n, color: [0.74, 0.58, 0.36], colorTo: [0.5, 0.36, 0.2], speed: 3 + 1.5 * size, dir: d, cone, up, life: 1.3 + 0.2 * size, size: 0.1 + 0.03 * size, gravity: 10, drag: 0.6, shape: 'disc' });
+    p.emit(x, y, z, { count: Math.round(n * 0.4), color: [0.45, 0.3, 0.14], colorTo: [0.36, 0.23, 0.1], speed: 2.5 + size, dir: d, cone, up, life: 1.6, size: 0.16 + 0.05 * size, gravity: 13, drag: 0.5, shape: 'disc' });
+    p.emit(x, y, z, { count: Math.round(n * 0.6), color: [0.8, 0.7, 0.5], colorTo: [0.6, 0.52, 0.38], speed: 1.5 + size, dir: d, cone, up: up + 0.3, life: 1 + 0.2 * size, size: 0.2 + 0.08 * size, drag: 1.5, alpha: 0.45, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+  } else if (stuff === 'metal') {
+    // Sparks that bounce, dark shards, a few bolts and rivets, grey smoke.
+    p.emit(x, y, z, { count: n * 2, color: [1, 0.92, 0.6], colorTo: [1, 0.45, 0.1], speed: 6 + 2 * size, dir: d, cone, up, life: 0.5 + 0.1 * size, size: 0.05, gravity: 12, drag: 0.3, stretch: 5, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark' });
+    p.emit(x, y, z, { count: n, color: [0.3, 0.3, 0.33], colorTo: [0.16, 0.16, 0.18], speed: 3 + 1.5 * size, dir: d, cone, up, life: 1.4, size: 0.08 + 0.03 * size, gravity: 13, drag: 0.4, stretch: 2, shape: 'spark' });
+    p.emit(x, y, z, { count: Math.round(n * 0.4), color: [0.42, 0.42, 0.45], colorTo: [0.2, 0.2, 0.22], speed: 2.5 + size, dir: d, cone, up, life: 1.6, size: 0.07 + 0.02 * size, gravity: 14, shape: 'disc' });
+    p.emit(x, y, z, { count: Math.round(n * 0.5), color: [0.4, 0.4, 0.4], colorTo: [0.22, 0.22, 0.22], speed: 1.2 + size, dir: d, cone, up: up + 0.4, life: 1.4 + 0.3 * size, size: 0.22 + 0.1 * size, drag: 1.3, alpha: 0.5, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+  } else {
+    // Chips and grit, a few lumps, and a thick dust cloud that hangs.
+    p.emit(x, y, z, { count: n * 2, color: [0.5, 0.49, 0.47], colorTo: [0.32, 0.32, 0.31], speed: 4 + 2 * size, dir: d, cone, up, life: 1 + 0.2 * size, size: 0.05 + 0.02 * size, gravity: 13, drag: 0.4, shape: 'disc' });
+    p.emit(x, y, z, { count: Math.round(n * 0.5), color: [0.42, 0.41, 0.4], colorTo: [0.3, 0.3, 0.29], speed: 2.5 + size, dir: d, cone, up, life: 1.6, size: 0.14 + 0.05 * size, gravity: 14, drag: 0.5, shape: 'disc' });
+    p.emit(x, y, z, { count: n, color: [0.6, 0.58, 0.55], colorTo: [0.42, 0.41, 0.4], speed: 1.5 + size, dir: d, cone, up: up + 0.3, life: 1.6 + 0.4 * size, size: 0.28 + 0.1 * size, drag: 1.4, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+  }
+}
+
 export function impactFx(renderer: Renderer, hit: Hit, size: number): void {
   const [x, y, z] = hit.point;
   const n = hit.normal;
@@ -193,10 +235,9 @@ export function impactFx(renderer: Renderer, hit: Hit, size: number): void {
     p.emit(px, py + 0.03, pz, { count: Math.round(10 * size), color: [0.78, 0.7, 0.5], colorTo: [0.72, 0.64, 0.47], speed: 2.5 + 1.2 * size, up: 0.1, life: 0.6 + 0.1 * size, size: 0.2 + 0.05 * size, drag: 2.5, alpha: 0.75, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
     if (big) p.emit(px, py + 0.2, pz, { count: 24, color: [0.7, 0.64, 0.5], colorTo: [0.55, 0.5, 0.42], speed: 1.2, up: 3.5, life: 2.2, size: 0.55, gravity: -0.4, drag: 0.9, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
   } else if (hit.surface === 'wood') {
-    // Wood: splinters flung along the normal, a few shavings, a puff of dust.
-    p.emit(px, py, pz, { count: Math.round(10 * size), color: [0.6, 0.42, 0.2], colorTo: [0.4, 0.26, 0.1], speed: 3.5 + 1.5 * size, dir: n, cone: 0.7, life: 0.9, size: 0.05 + 0.015 * size, gravity: 11, stretch: 3, shape: 'spark' });
-    p.emit(px, py, pz, { count: Math.round(5 * size), color: [0.75, 0.6, 0.4], colorTo: [0.55, 0.4, 0.22], speed: 2 + size, dir: n, cone: 0.9, life: 1.1, size: 0.07, gravity: 8, shape: 'disc' });
-    p.emit(px, py, pz, { count: Math.round(3 * size), color: [0.55, 0.45, 0.32], colorTo: [0.35, 0.3, 0.22], speed: 0.8, dir: n, cone: 1, up: 0.4, life: 0.8 + 0.2 * size, size: 0.16 + 0.06 * size, drag: 1.2, alpha: 0.5, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+    // Wood: a shower of splinters and chunks flung along the normal, and a puff of dust.
+    shatter(renderer, [px, py, pz], 'wood', size, n);
+    p.emit(px, py, pz, { count: Math.round(4 * size), color: [0.55, 0.45, 0.32], colorTo: [0.35, 0.3, 0.22], speed: 0.8, dir: n, cone: 1, up: 0.4, life: 0.8 + 0.2 * size, size: 0.16 + 0.06 * size, drag: 1.2, alpha: 0.5, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
   } else if (hit.surface === 'shell') {
     // A crab: a flash, bits of shell flung off along the normal, a few sparks off the metal, a puff.
     p.emit(px, py, pz, { count: big ? 6 : 2, color: [1, 0.9, 0.7], colorTo: [1, 0.5, 0.2], speed: 0.5, life: big ? 0.1 : 0.07, size: big ? 0.6 : 0.26, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });

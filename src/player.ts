@@ -4,6 +4,10 @@ import type { Ground } from './ground';
 import type { Obstacle } from './impacts';
 import { SHELLS, weightFactor, type ClawKind, type ShellType } from './shell';
 
+/** A full sprint lasts this long unladen (weight shortens it: × weightFactor), and comes all the way back in STAMINA_REST. */
+const STAMINA_SECONDS = 7;
+const STAMINA_REST = 5;
+
 /**
  * The player: a position on the sand, a facing and a velocity. The camera orbits freely round
  * a standing crab (look at its face); the moment the input pushes, the crab turns to face the
@@ -75,12 +79,20 @@ export class Player {
     }
   }
 
-  /** What is carried on the shell weighs this much: the heavier, the slower and the lower the jump. */
+  /** What is carried on the shell weighs this much: the heavier, the slower, the lower the jump and the shorter the sprint. */
   setWeight(weight: number): void {
     const f = weightFactor(weight);
     this.speed = 4.8 * this.shell.speed * f;
     this.jumpSpeed = 8 * Math.sqrt(this.shell.jump * f);
+    this.staminaSeconds = STAMINA_SECONDS * f;
   }
+
+  /** Stamina for sprinting, 0..1: spent while running, back while not; empty, the crab is winded until a third is back. */
+  stamina = 1;
+  winded = false;
+  private staminaSeconds = STAMINA_SECONDS;
+  /** Running this frame. */
+  running = false;
 
   get airborne(): boolean {
     return this.air > 0 || this.vy > 0;
@@ -109,6 +121,8 @@ export class Player {
     this.air = 0;
     this.vy = 0;
     this.health = this.maxHealth;
+    this.stamina = 1;
+    this.winded = false;
     this.crab.revive();
   }
 
@@ -138,10 +152,19 @@ export class Player {
       const d = Math.atan2(Math.sin(faceYaw - this.yaw), Math.cos(faceYaw - this.yaw));
       this.yaw += d * Math.min(1, this.turnRate * dt);
     }
+    // Sprinting spends stamina; standing or walking gets it back.
+    this.running = run && len > 1e-4 && !this.winded && this.stamina > 0;
+    if (this.running) {
+      this.stamina = Math.max(0, this.stamina - dt / this.staminaSeconds);
+      if (this.stamina === 0) this.winded = true;
+    } else {
+      this.stamina = Math.min(1, this.stamina + dt / STAMINA_REST);
+      if (this.winded && this.stamina >= 0.3) this.winded = false;
+    }
     if (len > 1e-4) {
       const nx = dir[0] / len;
       const nz = dir[2] / len;
-      const step = this.speed * (run ? this.runFactor : 1) * Math.min(1, len) * dt;
+      const step = this.speed * (this.running ? this.runFactor : 1) * Math.min(1, len) * dt;
       const margin = 1.5;
       this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, x0 + nx * step));
       this.position[2] = Math.min(this.ground.size - margin, Math.max(margin, z0 + nz * step));
