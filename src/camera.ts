@@ -39,6 +39,8 @@ export class ThirdPersonCamera implements CameraLike {
   groundHeight: ((x: number, z: number) => number) | null = null;
   /** How far above the ground the eye must stay (world units). */
   clearance = 0.6;
+  /** The zoom actually shown: pulled in from `distance` while ground stands between the crab and the eye, eased back out after. */
+  private shown = this.distance;
   /**
    * The rig: the whole camera (eye and the point it looks at) lifted by `lift` and moved
    * sideways by `shoulder` (right of the crab when positive), so a raised camera still faces
@@ -55,13 +57,13 @@ export class ThirdPersonCamera implements CameraLike {
     return [this.target[0] + r[0] * this.shoulder, this.target[1] + this.lift, this.target[2] + r[2] * this.shoulder];
   }
 
-  /** Where a perspective camera stands for this view: at the zoom distance behind the target. */
+  /** Where a perspective camera stands for this view: at the zoom distance (as shown) behind the target. */
   viewPoint(): Vec3 {
-    return this.eyeAt(this.distance);
+    return this.eyeAt(this.shown);
   }
 
   eye(): Vec3 {
-    return this.eyeAt(this.ortho ? ORTHO_BACK : this.distance);
+    return this.eyeAt(this.ortho ? ORTHO_BACK : this.shown);
   }
 
   private eyeAt(back: number, tilt = this.tilt): Vec3 {
@@ -72,7 +74,7 @@ export class ThirdPersonCamera implements CameraLike {
 
   /** How far along each view ray the scene starts: the orthographic eye stands ORTHO_BACK back, not at the zoom distance. */
   rayStart(): number {
-    return this.ortho ? Math.max(0, ORTHO_BACK - this.distance) : 0;
+    return this.ortho ? Math.max(0, ORTHO_BACK - this.shown) : 0;
   }
 
   view(): Mat4 {
@@ -88,7 +90,7 @@ export class ThirdPersonCamera implements CameraLike {
 
   /** The view distance to the target: where depth of field focuses when it follows the crab. */
   focusDistance(): number {
-    return this.ortho ? ORTHO_BACK : this.distance;
+    return this.ortho ? ORTHO_BACK : this.shown;
   }
 
   /** The direction the camera faces along the ground (unit, flat). Walking "forward" means this way. */
@@ -123,7 +125,10 @@ export class ThirdPersonCamera implements CameraLike {
     this.target[1] += (this.follow[1] + this.height - this.target[1]) * k;
     this.target[2] += (this.follow[2] - this.target[2]) * k;
     this.tilt = this.pitch;
-    if (!this.groundHeight) return;
+    if (!this.groundHeight) {
+      this.shown = this.distance;
+      return;
+    }
     const pivotY = this.pivot()[1];
     // The eye's footprint moves as the tilt changes; a few rounds settle it on flat and gentle ground.
     for (let i = 0; i < 3; i++) {
@@ -136,5 +141,19 @@ export class ThirdPersonCamera implements CameraLike {
       if (need === -Infinity) break;
       this.tilt = Math.max(this.tilt, Math.asin(Math.min(1, Math.max(-1, need))));
     }
+    // Ground between the crab and the eye (a cliff behind the crab): the camera pulls in along its own
+    // line to just in front of it, at once; it eases back out as the way clears.
+    let clear = this.distance;
+    const steps = Math.max(4, Math.ceil(this.distance / 0.25));
+    for (let s = 1; s <= steps; s++) {
+      const d = (this.distance * s) / steps;
+      const p = this.eyeAt(d);
+      if (p[1] < this.groundHeight(p[0], p[2]) + this.clearance * 0.5) {
+        clear = Math.max(this.minDistance * 0.4, d - 0.4);
+        break;
+      }
+    }
+    if (clear < this.shown) this.shown = clear;
+    else this.shown += (clear - this.shown) * (1 - Math.exp(-6 * dt));
   }
 }
