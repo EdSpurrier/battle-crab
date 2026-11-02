@@ -41,6 +41,9 @@ export class ThirdPersonCamera implements CameraLike {
   clearance = 0.6;
   /** The zoom actually shown: pulled in from `distance` while ground stands between the crab and the eye, eased back out after. */
   private shown = this.distance;
+  /** Aiming down the barrel (the right mouse button): 1 narrows the view and brings the camera in; eased toward `aimZoom`. */
+  aimZoom = 0;
+  private aimed = 0;
   /**
    * The rig: the whole camera (eye and the point it looks at) lifted by `lift` and moved
    * sideways by `shoulder` (right of the crab when positive), so a raised camera still faces
@@ -83,8 +86,9 @@ export class ThirdPersonCamera implements CameraLike {
   }
 
   projection(aspect: number): Mat4 {
-    if (!this.ortho) return perspective(this.fov, aspect, this.near, this.far);
-    const halfH = this.distance * Math.tan(this.fov / 2);
+    const fov = this.fov * (1 - 0.5 * this.aimed);
+    if (!this.ortho) return perspective(fov, aspect, this.near, this.far);
+    const halfH = this.shown * Math.tan(fov / 2);
     return orthographic(-halfH * aspect, halfH * aspect, -halfH, halfH, 1, ORTHO_BACK * 3);
   }
 
@@ -124,6 +128,7 @@ export class ThirdPersonCamera implements CameraLike {
     this.target[0] += (this.follow[0] - this.target[0]) * k;
     this.target[1] += (this.follow[1] + this.height - this.target[1]) * k;
     this.target[2] += (this.follow[2] - this.target[2]) * k;
+    this.aimed += (this.aimZoom - this.aimed) * (1 - Math.exp(-12 * dt));
     this.tilt = this.pitch;
     if (!this.groundHeight) {
       this.shown = this.distance;
@@ -143,10 +148,11 @@ export class ThirdPersonCamera implements CameraLike {
     }
     // Ground between the crab and the eye (a cliff behind the crab): the camera pulls in along its own
     // line to just in front of it, at once; it eases back out as the way clears.
-    let clear = this.distance;
-    const steps = Math.max(4, Math.ceil(this.distance / 0.25));
+    const wanted = this.distance * (1 - 0.4 * this.aimed);
+    let clear = wanted;
+    const steps = Math.max(4, Math.ceil(wanted / 0.25));
     for (let s = 1; s <= steps; s++) {
-      const d = (this.distance * s) / steps;
+      const d = (wanted * s) / steps;
       const p = this.eyeAt(d);
       if (p[1] < this.groundHeight(p[0], p[2]) + this.clearance * 0.5) {
         clear = Math.max(this.minDistance * 0.4, d - 0.4);

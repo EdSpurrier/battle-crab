@@ -1,6 +1,7 @@
 import type { Renderer, Vec3 } from 'gridfall-engine';
 import { Crab } from './crab';
 import type { Ground } from './ground';
+import { SHELLS, type ShellType } from './shell';
 
 /**
  * The player: a position on the sand, a facing and a velocity. The camera orbits freely round
@@ -36,9 +37,12 @@ export class Player {
     this.crab.snap(side);
   }
 
-  constructor(renderer: Renderer, private readonly ground: Ground, start: Vec3) {
+  constructor(renderer: Renderer, private readonly ground: Ground, start: Vec3, shell: ShellType = SHELLS[0]) {
     this.position = [start[0], ground.heightAt(start[0], start[2]), start[2]];
-    this.crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), this.position, this.yaw);
+    this.crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), this.position, this.yaw, shell);
+    // The shell's weight: slower with a heavy one, and a lower jump (height goes with the square of the take-off speed).
+    this.speed *= shell.speed;
+    this.jumpSpeed *= Math.sqrt(shell.jump);
   }
 
   /**

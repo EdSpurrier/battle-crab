@@ -18,5 +18,5 @@ export default defineConfig({
   resolve: useSource ? { alias: { 'gridfall-engine': ENGINE_SOURCE } } : {},
   server: { port: 5182, open: false, fs: { allow: ['.', '../gridfall-engine'] } },
   assetsInclude: ['**/*.glb'],
-  build: { rollupOptions: { input: { main: path.join(HERE, 'index.html'), editor: path.join(HERE, 'editor.html'), models: path.join(HERE, 'models.html') } } },
+  build: { rollupOptions: { input: { main: path.join(HERE, 'index.html'), editor: path.join(HERE, 'editor.html'), models: path.join(HERE, 'models.html'), shell: path.join(HERE, 'build.html') } } },
 });
