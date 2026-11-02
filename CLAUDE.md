@@ -30,11 +30,16 @@ src/tiles.ts    the ground tiles (TILES): canvas-drawn, seeded, seamless; a map'
 src/ground.ts   the beach from a map: engine terrain (levels; one step slopes, more is a cliff) with its top splatted
                 from the tiles; rebuild (levels changed), paint + commit (a cell's tile), setGrid, dispose
 src/mist.ts     MistSet: the map's banks as fog volumes, kept in step with their defs (sync), a thickness over all
+src/props.ts    Props: the map's rocks, boulders, clam and snail shells, driftwood and starfish, one procedural
+                (lumpy, seeded) mesh per kind, an instance per prop stood on the ground; the solid ones
+                (rock, boulder, driftwood) as boxes for shots; pick by reach for the map maker
 src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down the left (SVG paths in TOOLS /
                 ICONS, a tooltip per button from data-tip) with raise / lower / flatten / smooth under a round
                 brush, paint, mist (click empty ground: new bank; click or drag a bank; a bank list for the
-                beach-wide layer), start; the tool's options beside the toolbar (rebuilt per tool); the chosen
-                bank's controls on the right; saves as you go; Download / Load / New in the toolbar
+                beach-wide layer), props (a kind palette; click open ground: new prop; click or drag a prop;
+                size, turn, kind, duplicate, delete on the right), start; the tool's options beside the toolbar
+                (rebuilt per tool); the chosen bank's or prop's controls on the right; saves as you go;
+                Download / Load / New in the toolbar
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
 src/controls.ts the two control schemes (settings or C), topdown the default: "3rd person" (mouse orbits, pointer lock) and "topdown"
                 (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;

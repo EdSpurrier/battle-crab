@@ -1,7 +1,8 @@
 import { OrbitCamera, OverlayMesh, Renderer, translation, type OverlayData, type Vec3 } from 'gridfall-engine';
 import { buildGround } from './ground';
-import { MAX_LEVEL, defaultMap, downloadMap, loadMap, mistDef, readMapFile, saveMap, type MapData, type MistDef } from './map';
+import { MAX_LEVEL, PROP_KINDS, defaultMap, downloadMap, loadMap, mistDef, propDef, readMapFile, saveMap, type MapData, type MistDef, type PropKind } from './map';
 import { MistSet } from './mist';
+import { PROP_LOOKS, Props } from './props';
 import { band as bandOn, emptyOverlay as empty, ringPoints } from './overlayShapes';
 import { pickGround } from './pick';
 import { SettingsPanel } from './settings';
@@ -26,6 +27,7 @@ renderer.fogRange = [80, 300];
 let map: MapData = loadMap();
 let ground = buildGround(renderer, map);
 const mist = new MistSet(renderer, map.mist);
+const props = new Props(renderer, (x, z) => ground.heightAt(x, z), map.props);
 let gridOn = true;
 ground.setGrid(gridOn);
 
@@ -37,7 +39,7 @@ camera.pitch = (50 * Math.PI) / 180;
 
 // ---------- editor state
 
-type Tool = 'raise' | 'lower' | 'flatten' | 'smooth' | 'paint' | 'mist' | 'spawn';
+type Tool = 'raise' | 'lower' | 'flatten' | 'smooth' | 'paint' | 'mist' | 'props' | 'spawn';
 const TOOLS: { id: Tool; name: string; key: string; tip: string; icon: string }[] = [
   { id: 'raise', name: 'Raise', key: '1', tip: 'Raise the ground a level under the brush.\nHold to keep raising. One step slopes; two or more make a cliff.', icon: '<path d="M3 20h18"/><path d="M6 20c2-6 4-9 6-9s4 3 6 9"/><path d="M12 8V3"/><path d="M9.5 5.5 12 3l2.5 2.5"/>' },
   { id: 'lower', name: 'Lower', key: '2', tip: 'Lower the ground a level under the brush.\nHold to keep lowering.', icon: '<path d="M3 20h18"/><path d="M6 20c2-6 4-9 6-9s4 3 6 9"/><path d="M12 3v5"/><path d="M9.5 5.5 12 8l2.5-2.5"/>' },
@@ -45,7 +47,8 @@ const TOOLS: { id: Tool; name: string; key: string; tip: string; icon: string }[
   { id: 'smooth', name: 'Smooth', key: '4', tip: 'Soften the ground under the brush: each cell moves\ntoward its neighbours. Hold to keep smoothing.', icon: '<path d="M3 20h18"/><path d="M4 14c2.5-4.5 5-4.5 8 0s5.5 4.5 8 0"/>' },
   { id: 'paint', name: 'Paint', key: '5', tip: 'Paint the ground under the brush with the chosen tile.', icon: '<path d="M20 4c-3 0-9 7-9 7l2 2s7-6 7-9z"/><path d="M11 11c-2 0-4 1-4 4-1 1-2 1-3 1 1 2 3 3 5 3 3 0 4-2 4-4z"/>' },
   { id: 'mist', name: 'Mist', key: '6', tip: 'Click empty ground for a new mist bank; click a bank\nto choose it; drag to move it. Its controls open on the right.', icon: '<path d="M7 18h10a4 4 0 0 0 .5-8 6 6 0 0 0-11.3 1.5A3.3 3.3 0 0 0 7 18z"/>' },
-  { id: 'spawn', name: 'Start', key: '7', tip: 'Where the crab starts: click the ground.', icon: '<path d="M6 21V4"/><path d="M6 4h11l-2.5 4L17 12H6"/>' },
+  { id: 'props', name: 'Props', key: '7', tip: 'Rocks, shells, driftwood. Click the ground for a new one of the\nchosen kind; click a prop to choose it, drag to move it; Delete removes it.', icon: '<path d="M4 18c0-4 3-7 7-8 2-1 5 0 7 2 2 2 3 4 2 6H4z"/><path d="M9 11c1 2 1 4 0 7"/>' },
+  { id: 'spawn', name: 'Start', key: '8', tip: 'Where the crab starts: click the ground.', icon: '<path d="M6 21V4"/><path d="M6 4h11l-2.5 4L17 12H6"/>' },
 ];
 const ICONS = {
   grid: '<rect x="4" y="4" width="16" height="16" rx="1"/><path d="M4 9.3h16M4 14.7h16M9.3 4v16M14.7 4v16"/>',
@@ -58,6 +61,8 @@ let tool: Tool = 'raise';
 let brush = 2.5;
 let tile = 1;
 let selected = -1;
+let propKind: PropKind = 'rock';
+let selectedProp = -1;
 let flattenTo = 0;
 let saveTimer = 0;
 const toolButtons = new Map<Tool, HTMLButtonElement>();
@@ -86,10 +91,10 @@ renderer.overlays.push(ring, outline);
 const band = (points: Vec3[], width: number, rgba: [number, number, number, number]): OverlayData => bandOn(points, width, rgba, (x, z) => ground.heightAt(x, z));
 
 const RING_COLOR: Record<Tool, [number, number, number, number]> = {
-  raise: [0.5, 0.9, 1, 0.9], lower: [1, 0.5, 0.4, 0.9], flatten: [1, 0.85, 0.3, 0.9], smooth: [0.6, 1, 0.6, 0.9], paint: [1, 1, 1, 0.9], mist: [1, 1, 1, 0], spawn: [1, 0.85, 0.3, 0.9],
+  raise: [0.5, 0.9, 1, 0.9], lower: [1, 0.5, 0.4, 0.9], flatten: [1, 0.85, 0.3, 0.9], smooth: [0.6, 1, 0.6, 0.9], paint: [1, 1, 1, 0.9], mist: [1, 1, 1, 0], props: [1, 1, 1, 0], spawn: [1, 0.85, 0.3, 0.9],
 };
 function showRing(at: Vec3 | null): void {
-  if (!at || tool === 'mist') return ring.mesh.setData(empty());
+  if (!at || tool === 'mist' || tool === 'props') return ring.mesh.setData(empty());
   ring.mesh.setData(band(ringPoints(at[0], at[2], tool === 'spawn' ? 1 : brush), 0.1, RING_COLOR[tool]));
 }
 
@@ -104,6 +109,11 @@ function footprint(d: MistDef): Vec3[] {
 }
 
 function showOutline(): void {
+  if (tool === 'props') {
+    const p = map.props[selectedProp];
+    if (!p) return outline.mesh.setData(empty());
+    return outline.mesh.setData(band(ringPoints(p.x, p.z, PROP_LOOKS[p.kind].radius * p.scale + 0.15), 0.12, [1, 0.85, 0.3, 0.95]));
+  }
   const d = map.mist[selected];
   if (!d) return outline.mesh.setData(empty());
   const corners = footprint(d);
@@ -166,6 +176,8 @@ function setLevels(want: (x: number, z: number, level: number) => number, at: Ve
   });
   if (!changed) return;
   ground.rebuild();
+  // The props stand on the ground: they follow it up and down.
+  map.props.forEach((_, i) => props.refresh(i));
   touched();
 }
 
@@ -221,6 +233,29 @@ function deleteBank(): void {
   touched();
 }
 
+function selectProp(i: number): void {
+  selectedProp = i;
+  showOutline();
+  buildPropPanel();
+}
+
+function addProp(at: Vec3): void {
+  map.props.push(propDef({ kind: propKind, x: at[0], z: at[2], yaw: Math.random() * 360, scale: 0.85 + Math.random() * 0.4 }));
+  props.rebuild(map.props);
+  selectProp(map.props.length - 1);
+  buildOptions();
+  touched();
+}
+
+function deleteProp(): void {
+  if (selectedProp < 0) return;
+  map.props.splice(selectedProp, 1);
+  props.rebuild(map.props);
+  selectProp(-1);
+  buildOptions();
+  touched();
+}
+
 // ---------- mouse
 
 let button = -1;
@@ -228,6 +263,7 @@ let lastX = 0;
 let lastY = 0;
 let lastApply = 0;
 let dragBank = -1;
+let dragProp = -1;
 let dragFrom: Vec3 | null = null;
 let dragCenter: [number, number] = [0, 0];
 let hover: Vec3 | null = null;
@@ -283,6 +319,24 @@ function useTool(at: Vec3, first: boolean): void {
         touched();
       }
       break;
+    case 'props':
+      if (first) {
+        const hit = props.pick(at[0], at[2]);
+        if (hit >= 0) {
+          selectProp(hit);
+          dragProp = hit;
+          dragFrom = at;
+          dragCenter = [map.props[hit].x, map.props[hit].z];
+        } else addProp(at);
+      } else if (dragProp >= 0 && dragFrom) {
+        const p = map.props[dragProp];
+        p.x = dragCenter[0] + (at[0] - dragFrom[0]);
+        p.z = dragCenter[1] + (at[2] - dragFrom[2]);
+        props.refresh(dragProp);
+        showOutline();
+        touched();
+      }
+      break;
   }
 }
 
@@ -299,6 +353,7 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointerup', () => {
   button = -1;
   dragBank = -1;
+  dragProp = -1;
   dragFrom = null;
 });
 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
@@ -325,6 +380,7 @@ window.addEventListener('keydown', (e) => {
   if (e.code === 'BracketRight') setBrush(brush + 0.5);
   if (e.code === 'KeyG') setGrid(!gridOn);
   if ((e.code === 'Delete' || e.code === 'Backspace') && tool === 'mist' && selected >= 0) deleteBank();
+  if ((e.code === 'Delete' || e.code === 'Backspace') && tool === 'props' && selectedProp >= 0) deleteProp();
 });
 
 // ---------- the toolbar: icons down the left, a tooltip on each
@@ -384,6 +440,7 @@ function setTool(t: Tool): void {
   tool = t;
   toolButtons.forEach((b, k) => b.classList.toggle('on', k === t));
   if (t !== 'mist' && was === 'mist') select(-1);
+  if (t !== 'props' && was === 'props') selectProp(-1);
   buildOptions();
 }
 function setBrush(v: number): void {
@@ -438,6 +495,23 @@ function buildOptions(): void {
     options.root.lastElementChild!.appendChild(list);
     options.note(map.mist.length ? 'A number chooses a bank (the beach-wide layer too). On the ground: click a bank, drag to move it, click open sand for a new one.' : 'Click the ground to place the first bank.');
   }
+  if (tool === 'props') {
+    const swatches = document.createElement('div');
+    swatches.className = 'swatches';
+    PROP_KINDS.forEach((k) => {
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = `swatch${k === propKind ? ' on' : ''}`;
+      b.innerHTML = `<i style="background:${PROP_LOOKS[k].swatch}"></i>${PROP_LOOKS[k].name}`;
+      b.addEventListener('click', () => {
+        propKind = k;
+        swatches.querySelectorAll('.swatch').forEach((el) => el.classList.toggle('on', el === b));
+      });
+      swatches.appendChild(b);
+    });
+    options.root.lastElementChild!.appendChild(swatches);
+    options.note(`${map.props.length} on the beach. Click open ground for a new one; click a prop to choose it, drag to move it. Rocks, boulders and driftwood stop shots.`);
+  }
   if (tool === 'spawn') options.note(`The crab starts at ${map.spawn[0].toFixed(1)}, ${map.spawn[1].toFixed(1)}. Click the ground to move it.`);
   savedNote = options.note(savedNote?.textContent || 'saved as you go, in this browser');
   savedNote.classList.add('status');
@@ -450,10 +524,47 @@ function replaceMap(next: MapData): void {
   ground = buildGround(renderer, map);
   ground.setGrid(gridOn);
   mist.rebuild(map.mist);
+  props.rebuild(map.props);
   select(-1);
+  selectProp(-1);
   camera.target = [map.size / 2, 0, map.size / 2];
   buildOptions();
   touched();
+}
+
+// ---------- the chosen prop's controls, on the right
+
+const propPanel = new SettingsPanel(document.body, 'Prop', { persist: false, open: false });
+
+function buildPropPanel(): void {
+  propPanel.clear();
+  const p = map.props[selectedProp];
+  if (!p) return propPanel.toggle(false);
+  const i = selectedProp;
+  const changed = () => {
+    props.refresh(i);
+    showOutline();
+    touched();
+  };
+  propPanel.note(`${PROP_LOOKS[p.kind].name} ${i + 1} of ${map.props.length}: drag it on the ground to move it`);
+  propPanel
+    .section('Shape')
+    .slider('scale', 'Size', 0.3, 4, 0.05, () => p.scale, (v) => { p.scale = v; changed(); }, 2)
+    .slider('yaw', 'Turn', 0, 360, 1, () => p.yaw, (v) => { p.yaw = v; changed(); }, 0, 'degrees')
+    .choice('kind', 'Kind', PROP_KINDS.map((k) => PROP_LOOKS[k].name), () => PROP_LOOKS[p.kind].name, (v) => {
+      p.kind = PROP_KINDS.find((k) => PROP_LOOKS[k].name === v) ?? p.kind;
+      props.rebuild(map.props);
+      changed();
+    })
+    .plain()
+    .button('Duplicate', () => {
+      map.props.push(propDef({ ...p, x: p.x + 1.2, z: p.z + 0.8 }));
+      props.rebuild(map.props);
+      selectProp(map.props.length - 1);
+      touched();
+    })
+    .button('Delete', deleteProp, 'Delete key');
+  propPanel.toggle(true);
 }
 
 // ---------- the chosen bank's controls, on the right; rebuilt whenever the choice changes

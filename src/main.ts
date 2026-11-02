@@ -10,6 +10,7 @@ import { installLook } from './look';
 import { loadMap } from './map';
 import { MistSet } from './mist';
 import { Player } from './player';
+import { Props } from './props';
 import { loadBuild, shellType } from './shell';
 import { Structure } from './structure';
 import { Arsenal } from './weapons';
@@ -43,6 +44,9 @@ const player = new Player(renderer, ground, [map.spawn[0], 0, map.spawn[1]], she
 const structure = new Structure(renderer, build);
 player.crab.structure = structure;
 const world = new World((x, z) => ground.heightAt(x, z));
+// The beach's rocks, shells and driftwood (the map's props); the solid ones stop shots.
+const props = new Props(renderer, (x, z) => ground.heightAt(x, z), map.props);
+world.obstacles.push(...props.obstacles());
 const arsenal = new Arsenal(renderer, structure, world, player);
 camera.follow = player.position;
 camera.target = [player.position[0], player.position[1] + camera.height, player.position[2]];

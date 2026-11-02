@@ -31,6 +31,19 @@ export interface MistDef {
   glowStrength: number;
 }
 
+export type PropKind = 'rock' | 'boulder' | 'clam' | 'snail' | 'driftwood' | 'starfish';
+export const PROP_KINDS: PropKind[] = ['rock', 'boulder', 'clam', 'snail', 'driftwood', 'starfish'];
+
+/** A thing on the beach: a rock, a shell, a log, standing on the ground at (x, z). */
+export interface PropDef {
+  kind: PropKind;
+  x: number;
+  z: number;
+  /** Degrees about +y. */
+  yaw: number;
+  scale: number;
+}
+
 export interface MapData {
   version: number;
   name: string;
@@ -40,6 +53,7 @@ export interface MapData {
   /** Per cell: which ground tile (an index into tiles.ts's TILES). */
   paint: number[];
   mist: MistDef[];
+  props: PropDef[];
   /** Where the crab starts (x, z). */
   spawn: [number, number];
 }
@@ -71,9 +85,24 @@ export function mistDef(over: Partial<MistDef> = {}): MistDef {
   return { ...d, ...over, center: triple(over.center, d.center), size: triple(over.size, d.size), color: triple(over.color, d.color), glow: triple(over.glow, d.glow) };
 }
 
-/** The beach as it comes: flat sand, a low mist over all of it and two banks, the crab in the middle. */
+/** A prop with the defaults filled in. */
+export function propDef(over: Partial<PropDef> & { kind: PropKind }): PropDef {
+  return { x: 0, z: 0, yaw: 0, scale: 1, ...over };
+}
+
+/** The beach as it comes: flat sand, a low mist over all of it and two banks, a scatter of rocks and shells, the crab in the middle. */
 export function defaultMap(size = 64): MapData {
   const n = size * size;
+  let seed = 5;
+  const rand = () => ((seed = (seed * 16807) % 2147483647) - 1) / 2147483646;
+  const props: PropDef[] = [];
+  for (let i = 0; i < 26; i++) {
+    const x = 3 + rand() * (size - 6);
+    const z = 3 + rand() * (size - 6);
+    if (Math.hypot(x - size / 2, z - size / 2) < 5) continue;
+    const kind = PROP_KINDS[Math.floor(rand() * PROP_KINDS.length)];
+    props.push(propDef({ kind, x, z, yaw: rand() * 360, scale: 0.8 + rand() * 0.6 }));
+  }
   return {
     version: MAP_VERSION,
     name: 'beach',
@@ -85,6 +114,7 @@ export function defaultMap(size = 64): MapData {
       mistDef({ center: [size / 2 + 10, 0.9, size / 2 - 8], size: [12, 2, 9], yaw: 25, density: 0.5 }),
       mistDef({ center: [size / 2 - 12, 0.9, size / 2 + 9], size: [10, 1.8, 14], yaw: -40, density: 0.45 }),
     ],
+    props,
     spawn: [size / 2, size / 2],
   };
 }
@@ -109,6 +139,7 @@ export function normalizeMap(m: MapData): MapData {
     levels: m.levels.map((l) => Math.max(0, Math.min(MAX_LEVEL, Math.round(Number(l) || 0)))),
     paint: m.paint.map((p) => Math.max(0, Math.round(Number(p) || 0))),
     mist: m.mist.map((d) => mistDef(d)),
+    props: (Array.isArray(m.props) ? m.props : []).filter((p) => PROP_KINDS.includes(p.kind)).map((p) => propDef({ kind: p.kind, x: Number(p.x) || 0, z: Number(p.z) || 0, yaw: Number(p.yaw) || 0, scale: Math.max(0.2, Math.min(5, Number(p.scale) || 1)) })),
     spawn: [Number(m.spawn[0]) || m.size / 2, Number(m.spawn[1]) || m.size / 2],
   };
 }
