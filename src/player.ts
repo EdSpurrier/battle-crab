@@ -26,18 +26,21 @@ export class Player {
 
   /**
    * Move along `dir` (a direction on the ground, not necessarily unit; zero to stand still) while
-   * turning to face `faceYaw` (the camera's). Standing still, the facing is left alone.
+   * turning to face `faceYaw`. Standing still, the facing is left alone unless `faceAlways` (the
+   * top-down scheme: the crab follows the aim whether or not it walks).
    */
-  update(dt: number, dir: Vec3, faceYaw: number): void {
+  update(dt: number, dir: Vec3, faceYaw: number, faceAlways = false): void {
     const len = Math.hypot(dir[0], dir[2]);
     const x0 = this.position[0];
     const z0 = this.position[2];
+    if (len > 1e-4 || faceAlways) {
+      // Turn the short way round, eased.
+      const d = Math.atan2(Math.sin(faceYaw - this.yaw), Math.cos(faceYaw - this.yaw));
+      this.yaw += d * Math.min(1, this.turnRate * dt);
+    }
     if (len > 1e-4) {
       const nx = dir[0] / len;
       const nz = dir[2] / len;
-      // Turn to the camera's way the short way round, eased.
-      const d = Math.atan2(Math.sin(faceYaw - this.yaw), Math.cos(faceYaw - this.yaw));
-      this.yaw += d * Math.min(1, this.turnRate * dt);
       const step = this.speed * Math.min(1, len) * dt;
       const margin = 1.5;
       this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, x0 + nx * step));
