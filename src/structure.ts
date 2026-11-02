@@ -122,11 +122,11 @@ function shapeOf(kind: Piece['kind']): Shape {
       };
     case 'machinegun':
       return {
-        fixed: merge([box(-0.04, -H, -0.04, 0.04, -0.02, 0.04, IRON), box(-0.06, -0.02, -0.12, 0.06, 0.08, 0.1, IRON_LIGHT), box(-0.03, -0.12, -0.02, 0.03, -0.02, 0.06, BRASS)]),
-        // The barrel, about its pivot at the front of the body: it slides straight back into it on the recoil.
-        moving: merge([box(-0.02, -0.02, -0.02, 0.02, 0.02, 0.22, IRON), box(-0.03, -0.03, 0.16, 0.03, 0.03, 0.22, IRON_LIGHT)]),
-        pivot: [0, 0.03, 0.1],
-        muzzle: [0, 0.03, 0.32],
+        // A pedestal with a round plate; the whole gun (body, magazine, barrel) rides on a pintle at its top and elevates there.
+        fixed: merge([box(-0.04, -H, -0.04, 0.04, -0.03, 0.04, IRON), ellipsoid(0, -0.03, 0, 0.07, 0.015, 0.07, IRON_LIGHT, 12, 4)]),
+        moving: merge([box(-0.06, 0, -0.12, 0.06, 0.1, 0.1, IRON_LIGHT), box(-0.03, -0.09, -0.02, 0.03, 0, 0.06, BRASS), box(-0.02, 0.03, 0.1, 0.02, 0.07, 0.34, IRON), box(-0.03, 0.02, 0.28, 0.03, 0.08, 0.34, IRON_LIGHT)]),
+        pivot: [0, -0.02, 0],
+        muzzle: [0, 0.03, 0.34],
       };
     case 'flamethrower':
       return {
