@@ -18,6 +18,14 @@ Tab opens the settings: camera projection (perspective / orthographic), field of
 (focused on the crab or by hand), distance fog, volumetric haze and light shafts, mist banks. Settings
 are kept in the browser between visits.
 
+## The map maker
+`/editor.html` (the "map maker" link in the game's corner). Right-drag orbits, middle or shift-drag
+pans, the wheel zooms; the left button uses the tool. Raise, lower and flatten the ground under a
+round brush (whole levels: one step slopes, two or more make a cliff), paint it with the ground tiles,
+place mist banks (click empty ground for a new one, click a bank to choose it, drag to move it; each
+has its own shape, look and drift controls), and set where the crab starts. The map is saved in the
+browser as you go and the game loads it; Download keeps a `.json` file, Load brings one back.
+
 ## Playing it online
 `npm run deploy` publishes the current build to GitHub Pages at https://edspurrier.github.io/battle-crab/
 (the `gh-pages` branch). The build is made locally, so nothing in CI needs access to the private engine.

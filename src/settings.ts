@@ -1,38 +1,59 @@
 /**
- * A small settings panel: sections of toggles, sliders and choices built from getters and
- * setters on the live objects (the renderer's settings, the camera). Every control has a key;
- * its value is kept in localStorage and put back on the next load, so a look survives a reload.
- * Tab opens and closes it (main.ts); while it is open the mouse is the panel's, not the aim's.
+ * A small settings panel: sections of toggles, sliders, choices and colours built from getters
+ * and setters on the live objects (the renderer's settings, the camera). Every control has a key;
+ * its value is kept in localStorage and put back on the next load, so a look survives a reload
+ * (`persist: false` for a panel whose values live elsewhere, an editor's selection). Tab opens
+ * and closes it (main.ts); while it is open the mouse is the panel's, not the aim's.
+ *
+ * Sliders are a filled bar with no handle; the number beside each is a field (type a value and
+ * press Enter or click away), plain until it has focus.
  */
-
-const STORE = 'battle-crab.settings';
 
 type Stored = Record<string, boolean | number | string>;
 
-function load(): Stored {
+function load(store: string): Stored {
   try {
-    const raw = localStorage.getItem(STORE);
+    const raw = localStorage.getItem(store);
     return raw ? (JSON.parse(raw) as Stored) : {};
   } catch {
     return {};
   }
 }
 
+/** A CSS colour (#rrggbb) to the engine's linear rgb. */
+export function hexToLinear(hex: string): [number, number, number] {
+  const n = parseInt(hex.replace('#', ''), 16);
+  const c = (v: number) => Math.pow(v / 255, 2.2);
+  return [c((n >> 16) & 255), c((n >> 8) & 255), c(n & 255)];
+}
+
+/** Linear rgb to a CSS colour (#rrggbb). */
+export function linearToHex(rgb: [number, number, number]): string {
+  const c = (v: number) => Math.round(Math.pow(Math.min(1, Math.max(0, v)), 1 / 2.2) * 255).toString(16).padStart(2, '0');
+  return `#${c(rgb[0])}${c(rgb[1])}${c(rgb[2])}`;
+}
+
 export class SettingsPanel {
   readonly root: HTMLDivElement;
-  private readonly stored: Stored = load();
+  private readonly stored: Stored;
+  private readonly store: string | null;
   private section_: HTMLElement | null = null;
   private open_ = false;
   /** Called with the new state when the panel opens or closes. */
   onToggle: ((open: boolean) => void) | null = null;
 
-  constructor(parent: HTMLElement, title: string) {
+  constructor(parent: HTMLElement, title: string, options: { persist?: string | false; open?: boolean } = {}) {
+    this.store = options.persist === false ? null : (options.persist ?? 'battle-crab.settings');
+    this.stored = this.store ? load(this.store) : {};
     this.root = document.createElement('div');
     this.root.className = 'settings';
-    this.root.hidden = true;
-    const h = document.createElement('h2');
-    h.textContent = title;
-    this.root.appendChild(h);
+    this.open_ = options.open ?? false;
+    this.root.hidden = !this.open_;
+    if (title) {
+      const h = document.createElement('h2');
+      h.textContent = title;
+      this.root.appendChild(h);
+    }
     parent.appendChild(this.root);
   }
 
@@ -56,6 +77,19 @@ export class SettingsPanel {
     return this;
   }
 
+  /** Everything added from here on goes to the panel's bottom again (after sections). */
+  plain(): this {
+    this.section_ = null;
+    return this;
+  }
+
+  /** Empty the panel of everything but its title (a panel rebuilt for a new selection). */
+  clear(): this {
+    for (const el of Array.from(this.root.children)) if (el.tagName !== 'H2') el.remove();
+    this.section_ = null;
+    return this;
+  }
+
   /** A checkbox. */
   toggle_(key: string, label: string, get: () => boolean, set: (v: boolean) => void): this {
     const row = this.row(label);
@@ -72,28 +106,53 @@ export class SettingsPanel {
     return this;
   }
 
-  /** A slider with its value shown beside it. */
-  slider(key: string, label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, format: (v: number) => string = (v) => String(Math.round(v * 100) / 100)): this {
+  /** A slider (a filled bar) with an editable number beside it. `decimals` rounds what the field shows. */
+  slider(key: string, label: string, min: number, max: number, step: number, get: () => number, set: (v: number) => void, decimals = step < 0.01 ? 3 : step < 0.1 ? 2 : step < 1 ? 1 : 0, unit = ''): this {
     const row = this.row(label);
     const input = document.createElement('input');
     input.type = 'range';
     input.min = String(min);
     input.max = String(max);
     input.step = String(step);
-    const out = document.createElement('span');
-    out.className = 'value';
+    const field = document.createElement('input');
+    field.type = 'number';
+    field.className = 'value';
+    field.min = String(min);
+    field.max = String(max);
+    field.step = String(step);
+    if (unit) field.title = unit;
     const stored = this.stored[key];
     if (typeof stored === 'number') set(stored);
-    input.value = String(get());
-    out.textContent = format(get());
+    const show = (v: number) => {
+      input.value = String(v);
+      input.style.setProperty('--fill', `${((v - min) / (max - min)) * 100}%`);
+      if (document.activeElement !== field) field.value = v.toFixed(decimals);
+    };
+    show(get());
     input.addEventListener('input', () => {
       const v = Number(input.value);
       set(v);
-      out.textContent = format(v);
+      show(v);
       this.save(key, v);
     });
+    const commit = () => {
+      const typed = Number(field.value);
+      if (!Number.isFinite(typed)) return show(get());
+      const v = Math.min(max, Math.max(min, typed));
+      set(v);
+      field.blur();
+      show(v);
+      this.save(key, v);
+    };
+    field.addEventListener('change', commit);
+    field.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') commit();
+      if (e.key === 'Escape') field.blur();
+      e.stopPropagation();
+    });
+    field.addEventListener('blur', () => show(get()));
     row.appendChild(input);
-    row.appendChild(out);
+    row.appendChild(field);
     return this;
   }
 
@@ -118,6 +177,49 @@ export class SettingsPanel {
     return this;
   }
 
+  /** A colour, given and taken as the engine's linear rgb. */
+  color(key: string, label: string, get: () => [number, number, number], set: (v: [number, number, number]) => void): this {
+    const row = this.row(label);
+    const input = document.createElement('input');
+    input.type = 'color';
+    const stored = this.stored[key];
+    if (typeof stored === 'string') set(hexToLinear(stored));
+    input.value = linearToHex(get());
+    input.addEventListener('input', () => {
+      set(hexToLinear(input.value));
+      this.save(key, input.value);
+    });
+    row.appendChild(input);
+    return this;
+  }
+
+  /** A button. */
+  button(label: string, onClick: () => void, title = ''): this {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = label;
+    if (title) b.title = title;
+    b.addEventListener('click', onClick);
+    const holder = this.section_ ?? this.root;
+    let bar = holder.lastElementChild;
+    if (!bar || !bar.classList.contains('buttons')) {
+      bar = document.createElement('div');
+      bar.className = 'buttons';
+      holder.appendChild(bar);
+    }
+    bar.appendChild(b);
+    return this;
+  }
+
+  /** A line of text (a hint, a readout); returns the element so it can be updated. */
+  note(text: string): HTMLParagraphElement {
+    const p = document.createElement('p');
+    p.className = 'note';
+    p.textContent = text;
+    (this.section_ ?? this.root).appendChild(p);
+    return p;
+  }
+
   private row(label: string): HTMLLabelElement {
     const row = document.createElement('label');
     const span = document.createElement('span');
@@ -128,9 +230,10 @@ export class SettingsPanel {
   }
 
   private save(key: string, value: boolean | number | string): void {
+    if (!this.store) return;
     this.stored[key] = value;
     try {
-      localStorage.setItem(STORE, JSON.stringify(this.stored));
+      localStorage.setItem(this.store, JSON.stringify(this.stored));
     } catch {
       // Storage may be unavailable (private window); the setting still applies this session.
     }

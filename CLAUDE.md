@@ -12,7 +12,7 @@ forked per game.
 ## Commands
 ```bash
 npm install          # installs gridfall-engine from GitHub at the tag in package.json (and builds it)
-npm run dev          # http://localhost:5182
+npm run dev          # http://localhost:5182 (the game) and /editor.html (the map maker)
 npm run dev:engine   # the same, but on ../gridfall-engine's source (an engine feature being built next door)
 npm run typecheck    # tsc --noEmit
 npm run build        # typecheck + vite build
@@ -24,13 +24,24 @@ npm run deploy       # build for GitHub Pages (base /battle-crab/) and push dist
 src/main.ts     bootstrap: scene, input (mouse orbits with no button held, pointer lock on click; WASD walks
                 relative to the camera), the frame
 src/camera.ts   ThirdPersonCamera (the engine's CameraLike: eye / view / projection / target / distance)
-src/ground.ts   the sand the crab walks on (engine terrain, flat for now)
+src/map.ts      MapData: a level per cell (LEVEL_HEIGHT, MAX_LEVEL), a tile per cell, mist banks (MistDef), the spawn;
+                defaults, validation, localStorage (the game loads what the map maker last saved), file download / read
+src/tiles.ts    the ground tiles (TILES): canvas-drawn, seeded, seamless; a map's paint indexes them
+src/ground.ts   the beach from a map: engine terrain (levels; one step slopes, more is a cliff) with its top splatted
+                from the tiles; rebuild (levels changed), paint + commit (a cell's tile), setGrid, dispose
+src/mist.ts     MistSet: the map's banks as fog volumes, kept in step with their defs (sync), a thickness over all
+src/editor.ts   the map maker (editor.html): orbit camera; raise / lower / flatten under a round brush, paint,
+                mist (click empty ground: new bank; click or drag a bank; a bank list for the beach-wide layer),
+                spawn; the chosen bank's controls on the right; saves as you go; Download / Load / New
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
-src/settings.ts SettingsPanel: sections of toggles / sliders / choices on live getters and setters, kept in localStorage
-src/look.ts     the Look (Tab): camera projection, field of view, depth of field (focus on the crab or by hand);
-                distance fog (pushed back by the orthographic eye's extra distance); volumetric haze; mist banks
+src/settings.ts SettingsPanel: sections of toggles / sliders (handle-less bars with an editable number) / choices /
+                colours / buttons on live getters and setters, kept in localStorage (or not: persist false)
+src/look.ts     the Look (Tab): camera projection, field of view, ground clearance, near fade, depth of field (focus
+                on the crab or by hand); distance fog (start, end, colour tint; pushed back by the orthographic
+                eye's extra distance); volumetric haze; mist banks
+src/ui.css      the HUD (black text, no shadow), crosshair and panel styles, shared by every page
 ```
 
 ## Deploying
@@ -44,6 +55,11 @@ The build runs locally, so the private engine needs no token in CI.
   crab turns, eased, to face the camera's way and moves relative to it: W/S forward and back along
   the look, A/D a sidestep across it (it does not turn to face a sidestep or a back-pedal).
 - The shell is the build site for the weapon platform; its spire curls up and to the crab's right.
+- The camera never goes under the ground: `ThirdPersonCamera.clearance` (a setting) is how high the eye
+  stays; the tilt shown is raised from the one asked for when needed. Things close to the eye fade
+  (`renderer.nearFade`, a setting); the ground's materials have `nearFade: false` so only what stands on it does.
+- Pointer lock is asked for on mousedown and again on click of the same gesture, so the first press
+  that gives the window focus is enough in a real browser (the embedded pane refuses it altogether).
 - Crab body space (`src/crab.ts`): the crab faces +z and +x is its LEFT (right-handed, +y up).
 
 ## Rules

@@ -7,9 +7,11 @@ export const ORTHO_BACK = 200;
  * A third-person follow camera: looks at a point just above the crab from behind it, at a
  * yaw / pitch / distance the player turns and zooms, in perspective or orthographically
  * (the same framing at the zoom distance, from an eye pulled far back along the same line).
- * Implements the engine's CameraLike (eye, view, projection, target, distance, viewPoint,
- * rayStart), so shadows and grass centre on the crab and fog is measured from where a
- * perspective camera would stand. Input handling lives in main.ts; this only holds the framing.
+ * Kept above the ground: when the pitch asked for would put the eye under the sand (plus
+ * `clearance`), the view tilts up just enough. Implements the engine's CameraLike (eye, view,
+ * projection, target, distance, viewPoint, rayStart), so shadows and grass centre on the crab
+ * and fog is measured from where a perspective camera would stand. Input handling lives in
+ * main.ts; this only holds the framing.
  */
 export class ThirdPersonCamera implements CameraLike {
   /** The point looked at (the crab, lifted by `height`); eased toward `follow` each frame. */
@@ -19,6 +21,7 @@ export class ThirdPersonCamera implements CameraLike {
   /** How far above the crab's feet the camera looks. */
   height = 1.2;
   yaw = 0;
+  /** The tilt asked for; `tilt` is what is shown once the ground has had its say. */
   pitch = (18 * Math.PI) / 180;
   distance = 9;
   fov = (50 * Math.PI) / 180;
@@ -26,12 +29,17 @@ export class ThirdPersonCamera implements CameraLike {
   far = 400;
   minDistance = 3;
   maxDistance = 30;
-  minPitch = (-5 * Math.PI) / 180;
+  minPitch = (-15 * Math.PI) / 180;
   maxPitch = (80 * Math.PI) / 180;
   /** How quickly the look-at point catches up with the crab (per second; higher is stiffer). */
   stiffness = 10;
   /** Orthographic instead of perspective. */
   ortho = false;
+  /** The ground under a point, when the camera is to stay above it. */
+  groundHeight: ((x: number, z: number) => number) | null = null;
+  /** How far above the ground the eye must stay (world units). */
+  clearance = 0.6;
+  private tilt = this.pitch;
 
   /** Where a perspective camera stands for this view: at the zoom distance behind the target. */
   viewPoint(): Vec3 {
@@ -42,9 +50,9 @@ export class ThirdPersonCamera implements CameraLike {
     return this.eyeAt(this.ortho ? ORTHO_BACK : this.distance);
   }
 
-  private eyeAt(back: number): Vec3 {
-    const cp = Math.cos(this.pitch);
-    return [this.target[0] - Math.sin(this.yaw) * cp * back, this.target[1] + Math.sin(this.pitch) * back, this.target[2] - Math.cos(this.yaw) * cp * back];
+  private eyeAt(back: number, tilt = this.tilt): Vec3 {
+    const cp = Math.cos(tilt);
+    return [this.target[0] - Math.sin(this.yaw) * cp * back, this.target[1] + Math.sin(tilt) * back, this.target[2] - Math.cos(this.yaw) * cp * back];
   }
 
   /** How far along each view ray the scene starts: the orthographic eye stands ORTHO_BACK back, not at the zoom distance. */
@@ -86,11 +94,21 @@ export class ThirdPersonCamera implements CameraLike {
     this.distance = Math.min(this.maxDistance, Math.max(this.minDistance, this.distance * factor));
   }
 
-  /** Ease the look-at point toward the crab. */
+  /** Ease the look-at point toward the crab, then keep the eye above the ground. */
   update(dt: number): void {
     const k = 1 - Math.exp(-this.stiffness * dt);
     this.target[0] += (this.follow[0] - this.target[0]) * k;
     this.target[1] += (this.follow[1] + this.height - this.target[1]) * k;
     this.target[2] += (this.follow[2] - this.target[2]) * k;
+    this.tilt = this.pitch;
+    if (!this.groundHeight) return;
+    // The eye's footprint moves as the tilt changes; two rounds settle it on flat and gentle ground.
+    for (let i = 0; i < 2; i++) {
+      const eye = this.eyeAt(this.distance);
+      const floor = this.groundHeight(eye[0], eye[2]) + this.clearance;
+      if (eye[1] >= floor) break;
+      const s = Math.min(1, Math.max(-1, (floor - this.target[1]) / this.distance));
+      this.tilt = Math.max(this.tilt, Math.asin(s));
+    }
   }
 }

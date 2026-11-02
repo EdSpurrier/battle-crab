@@ -7,6 +7,7 @@ import { defineConfig } from 'vite';
  * Battle Crab draws with the Gridfall Engine installed as a package at a release tag (package.json).
  * `npm run dev:engine` (ENGINE_SOURCE=1) aliases the sibling checkout's source instead, so an engine
  * feature being built next door shows here straight away before it is released.
+ * Two pages: the game (index.html) and the map maker (editor.html).
  */
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ENGINE_SOURCE = path.join(HERE, '../gridfall-engine/src/engine/index.ts');
@@ -15,4 +16,5 @@ const useSource = process.env.ENGINE_SOURCE === '1' && existsSync(ENGINE_SOURCE)
 export default defineConfig({
   resolve: useSource ? { alias: { 'gridfall-engine': ENGINE_SOURCE } } : {},
   server: { port: 5182, open: false, fs: { allow: ['.', '../gridfall-engine'] } },
+  build: { rollupOptions: { input: { main: path.join(HERE, 'index.html'), editor: path.join(HERE, 'editor.html') } } },
 });
