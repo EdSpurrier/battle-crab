@@ -62,7 +62,10 @@ The build runs locally, so the private engine needs no token in CI.
 them automatically. Keep the folder flat; a file dropped in shows on the next dev reload or build.
 
 ## Game feel decided so far
-- Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`).
+- Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`). Space jumps.
+  The gait steps slowly with long strides (STEP_TRIGGER, STEP_SECONDS, STEP_LEAD in crab.ts).
+- Left mouse button snaps the crab's left pincer, right button its right (`Crab.snap`): the claw
+  thrusts forward and the hinged upper jaw shuts at the peak. Googly eyes: pupils are weights on springs.
 - The mouse orbits the camera with no button held (pointer lock on any click, Esc releases). A
   standing crab does not turn with the camera (you can look at its face). While any key is held the
   crab turns, eased, to face the camera's way and moves relative to it: W/S forward and back along

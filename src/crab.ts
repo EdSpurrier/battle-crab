@@ -16,13 +16,19 @@ export const HEIGHT = 0.5;
 /** Ground height under a point: feet land on it. */
 export type GroundHeight = (x: number, z: number) => number;
 
-const STEP_TRIGGER = 0.26;
+/** How far a foot may be from its spot before the leg steps: longer strides, fewer steps. */
+const STEP_TRIGGER = 0.45;
 /** A step's length in time at walking pace; steps quicken above WALK_SPEED down to STEP_SECONDS_MIN (a run). */
-const STEP_SECONDS = 0.13;
-const STEP_SECONDS_MIN = 0.06;
-const WALK_SPEED = 3.2;
-const STEP_LIFT = 0.2;
-const STEP_LEAD = 0.1;
+const STEP_SECONDS = 0.22;
+const STEP_SECONDS_MIN = 0.1;
+const WALK_SPEED = 4.8;
+const STEP_LIFT = 0.26;
+/** How far ahead of the spot a foot lands, in seconds of the body's velocity: the stride reaches forward. */
+const STEP_LEAD = 0.17;
+/** A pincer's snap: how long it takes, how far the claw thrusts forward, how wide the jaw rests open (radians). */
+const SNAP_SECONDS = 0.28;
+const SNAP_THRUST = 0.45;
+const JAW_OPEN = 0.5;
 /** A planted foot further from its hip than this share of the leg's reach slides along, rather than stretch back to where it was. */
 const REACH_KEEP = 0.93;
 /** A group may start stepping once the other group's step is this far along (a quicker cadence at speed than waiting for it to land). */
@@ -169,7 +175,11 @@ interface Claw {
   side: number;
   upper: Instance;
   lower: Instance;
-  pincer: Instance;
+  /** The pincer: a fixed lower jaw along the forearm and an upper jaw hinged at the wrist. */
+  jawLower: Instance;
+  jawUpper: Instance;
+  /** A snap in progress, 0..1 (-1: none). */
+  snap: number;
 }
 
 /** A googly eye: the eyeball's centre in body space and a pupil that slides about on it (offset and speed across and up, as shares of the radius). */
@@ -239,8 +249,8 @@ export class Crab {
       for (const s of [-1, 1]) {
         const z = 0.3 - i * 0.3;
         const splay = (1 - i) * 0.25;
-        const l1 = 0.55;
-        const l2 = 0.75;
+        const l1 = 0.6;
+        const l2 = 0.85;
         this.legs.push({
           hip: [s * 0.4, 0, z],
           rest: [s * 1.05, 0, z + splay],
@@ -271,7 +281,10 @@ export class Crab {
         side: s,
         upper: part(rod(l1, 0.1, LEG)),
         lower: part(rod(l2, 0.085, LEG)),
-        pincer: part(ellipsoid(0, 0.2, 0, 0.15, 0.24, 0.11, BODY, 10, 6)),
+        // Jaws built along +y from the wrist, one each side of the hinge (local z is up once posed).
+        jawLower: part(ellipsoid(0, 0.2, -0.05, 0.14, 0.25, 0.065, BODY, 10, 6)),
+        jawUpper: part(ellipsoid(0, 0.19, 0.05, 0.13, 0.23, 0.06, BODY, 10, 6)),
+        snap: -1,
       });
     }
 
@@ -303,6 +316,11 @@ export class Crab {
     this.centre[2] = at[2];
     this.centre[1] = at[1] + HEIGHT;
     this.wobbleEyes(dt, yaw, velocity);
+    for (const claw of this.claws) {
+      if (claw.snap < 0) continue;
+      claw.snap += dt / SNAP_SECONDS;
+      if (claw.snap >= 1) claw.snap = -1;
+    }
 
     if (airborne) {
       // Feet drawn in under the body, no stepping; on landing they are near their spots and the gait takes over.
@@ -380,6 +398,12 @@ export class Crab {
     this.pose(yaw, speed);
   }
 
+  /** Snap a pincer: the crab's left (+1) or right (-1) claw thrusts forward and closes. Ignored mid-snap. */
+  snap(side: 1 | -1): void {
+    const claw = this.claws.find((c) => c.side === side);
+    if (claw && claw.snap < 0) claw.snap = 0;
+  }
+
   /**
    * Googly eyes: each pupil is a weight on a spring in the eyeball, jolted the other way whenever the
    * crab speeds up, slows, turns or jumps, and settling back to looking forward.
@@ -437,14 +461,22 @@ export class Crab {
     for (const claw of this.claws) {
       const shoulder = toWorld(claw.shoulder, this.centre, yaw);
       const sway = Math.sin(this.phase * 2 + claw.side) * (0.02 + Math.min(0.06, speed * 0.02));
-      const rest: Vec3 = [claw.rest[0], claw.rest[1] + sway, claw.rest[2] + sway * 0.5];
+      // A snap: the claw thrusts forward and a little up over the snap, the jaw shutting at its peak.
+      const snapping = claw.snap >= 0;
+      const thrust = snapping ? Math.sin(claw.snap * Math.PI) : 0;
+      const rest: Vec3 = [claw.rest[0] - claw.side * thrust * 0.1, claw.rest[1] + sway + thrust * 0.12, claw.rest[2] + sway * 0.5 + thrust * SNAP_THRUST];
       const target = toWorld(rest, this.centre, yaw);
       const { joint, end } = twoBone(shoulder, target, claw.l1, claw.l2, toWorldDir(claw.pole, yaw));
       poseAlong(claw.upper.model, shoulder, joint, forward);
       poseAlong(claw.lower.model, joint, end, forward);
-      // The pincer carries on along the forearm.
-      const on = add(end, sub(end, joint));
-      poseAlong(claw.pincer.model, end, on, [0, 1, 0]);
+      // The pincer carries on along the forearm: the lower jaw fixed, the upper hinged open at the wrist.
+      const dir = normalize(sub(end, joint));
+      poseAlong(claw.jawLower.model, end, add(end, dir), [0, 1, 0]);
+      const open = JAW_OPEN * (1 - thrust);
+      let up = sub([0, 1, 0], scale(dir, dot([0, 1, 0], dir)));
+      up = length(up) < 1e-4 ? [0, 0, 1] : normalize(up);
+      const hinged = add(scale(dir, Math.cos(open)), scale(up, Math.sin(open)));
+      poseAlong(claw.jawUpper.model, end, add(end, hinged), [0, 1, 0]);
     }
   }
 }
