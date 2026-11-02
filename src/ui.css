@@ -45,7 +45,27 @@ canvas { display: block; width: 100%; height: 100%; }
 .settings button.on { background: #4f8fd9; border-color: #4f8fd9; color: #fff; }
 .settings .note { margin: 4px 0; color: #8fa3b8; }
 
-/* The map maker's tile palette. */
-.settings .swatches { display: flex; flex-wrap: wrap; gap: 4px; margin: 4px 0; }
-.settings .swatch { width: 34px; height: 24px; padding: 0; border: 2px solid rgba(255, 255, 255, 0.15); border-radius: 3px; cursor: pointer; }
-.settings .swatch.on { border-color: #fff; box-shadow: 0 0 0 1px #4f8fd9; }
+/* The map maker: a toolbar of icons down the left edge, each with a tooltip; the tool's options beside it. */
+#toolbar { position: fixed; left: 10px; top: 40px; display: flex; flex-direction: column; gap: 3px; padding: 6px; box-sizing: border-box; width: 48px;
+  background: rgba(10, 14, 20, 0.86); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; backdrop-filter: blur(4px); }
+#toolbar hr { width: 24px; margin: 3px auto; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+#toolbar button, #toolbar a { position: relative; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; margin: 0;
+  background: transparent; color: #aab7c6; border: 1px solid transparent; border-radius: 6px; cursor: pointer; text-decoration: none; }
+#toolbar button:hover, #toolbar a:hover { background: #263142; color: #fff; }
+#toolbar button.on { background: #4f8fd9; color: #fff; border-color: #6ea6e8; }
+#toolbar button.lit { color: #4f8fd9; }
+#toolbar svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#toolbar [data-tip]::after { content: attr(data-tip); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); white-space: pre; z-index: 2;
+  padding: 5px 8px; background: #111822; color: #e6edf5; font: 12px/1.35 system-ui, sans-serif; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 5px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  opacity: 0; pointer-events: none; transition: opacity 0.08s; }
+#toolbar [data-tip]::before { content: ''; position: absolute; left: calc(100% + 4px); top: 50%; transform: translateY(-50%); border: 6px solid transparent; border-right-color: #111822; opacity: 0; pointer-events: none; }
+#toolbar [data-tip]:hover::after, #toolbar [data-tip]:hover::before { opacity: 1; }
+#toolbar [data-tip]::after b { display: block; color: #fff; }
+.settings.left { right: auto; left: 66px; top: 40px; width: 224px; }
+.settings .swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 4px 0; }
+.settings .swatch { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 3px; background: #1b232e; color: #c3cdd8; font: 11px/1.2 system-ui, sans-serif;
+  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; cursor: pointer; text-align: center; }
+.settings .swatch i { display: block; height: 22px; border-radius: 3px; }
+.settings .swatch:hover { border-color: rgba(255, 255, 255, 0.3); color: #fff; }
+.settings .swatch.on { border-color: #4f8fd9; box-shadow: 0 0 0 1px #4f8fd9; color: #fff; }
+.settings .status { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.08); color: #6f8296; font-size: 11px; }
