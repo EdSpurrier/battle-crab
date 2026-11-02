@@ -45,7 +45,7 @@ export const MATERIALS: Record<Material, { name: string; hp: number; weight: num
 };
 export const MATERIAL_IDS: Material[] = ['wood', 'metal', 'stone'];
 
-export type PieceKind = 'plank' | 'beam' | 'joint' | 'cannon' | 'gatling' | 'machinegun' | 'flamethrower' | 'knocker' | 'spikeball' | 'fireworks';
+export type PieceKind = 'plank' | 'beam' | 'joint' | 'cannon' | 'gatling' | 'machinegun' | 'flamethrower' | 'knocker' | 'spikeball' | 'fireworks' | 'grenade';
 
 export interface PieceType {
   kind: PieceKind;
@@ -70,6 +70,7 @@ export const PIECES: PieceType[] = [
   { kind: 'knocker', name: 'Bommy knocker', key: '8', weapon: true, blurb: 'A spiked ball on a chain. Hold to pump the swing; let it fly through things.', hp: 60, weight: 4 },
   { kind: 'spikeball', name: 'Spiky ball cannon', key: '9', weapon: true, blurb: 'Fires a spiked ball on a chain; press again to reel it in.', hp: 60, weight: 5 },
   { kind: 'fireworks', name: 'Fireworks gun', key: '0', weapon: true, blurb: 'A handful of rockets that spin off every which way and pop.', hp: 35, weight: 2 },
+  { kind: 'grenade', name: 'Grenade launcher', key: 'g', weapon: true, blurb: 'Lobs a grenade that bounces, then bursts: a blast that hurts everything near it.', hp: 55, weight: 3.5 },
 ];
 
 /** The claws: the crab's own, or metal clampers in four sizes. */
