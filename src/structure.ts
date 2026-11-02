@@ -14,6 +14,25 @@ const IRON_LIGHT: Vec = [0.3, 0.3, 0.33];
 const BRASS: Vec = [0.55, 0.4, 0.12];
 const TANK: Vec = [0.5, 0.08, 0.05];
 const H = CELL / 2;
+/** Weapons are drawn this many times their cell (about the cell's floor, so they still stand on it). */
+const WEAPON_SCALE = 3;
+
+/** The mesh scaled by `s` about the point (0, y0, 0). */
+function scaledMesh(data: MeshData, s: number, y0: number): MeshData {
+  const v = new Float32Array(data.vertices);
+  for (let i = 0; i < v.length; i += 11) {
+    v[i] *= s;
+    v[i + 1] = y0 + (v[i + 1] - y0) * s;
+    v[i + 2] *= s;
+  }
+  return { vertices: v, indices: data.indices };
+}
+
+function scaledShape(shape: Shape, s: number): Shape {
+  const y0 = -H;
+  const pt = (p?: [number, number, number]): [number, number, number] | undefined => (p ? [p[0] * s, y0 + (p[1] - y0) * s, p[2] * s] : undefined);
+  return { fixed: scaledMesh(shape.fixed, s, y0), moving: shape.moving ? scaledMesh(shape.moving, s, y0) : undefined, pivot: pt(shape.pivot), muzzle: pt(shape.muzzle) };
+}
 
 function ellipsoid(cx: number, cy: number, cz: number, rx: number, ry: number, rz: number, color: Vec, segs = 10, rings = 6): MeshData {
   const b = new MeshBuilder();
@@ -147,7 +166,7 @@ export class Structure {
     const metal = material({ roughness: 0.45, metallic: 0.6 });
     build.pieces.forEach((piece, index) => {
       const type = pieceType(piece.kind);
-      const shape = shapeOf(piece.kind);
+      const shape = type.weapon ? scaledShape(shapeOf(piece.kind), WEAPON_SCALE) : shapeOf(piece.kind);
       const c = cellCentre(this.shell, piece.x, piece.y, piece.z);
       const local = multiply(translation(c[0], c[1], c[2]), rotationY((piece.yaw * Math.PI) / 2));
       const mat = type.weapon ? metal : wood;
@@ -187,10 +206,10 @@ export class Structure {
           motion = rotationX(-0.35 + Math.sin(kick * Math.PI) * 1.9, this.tmp);
           break;
         case 'gatling':
-          motion = multiply(translation(0, 0, -kick * 0.03, this.tmp2), rotZ(spin), this.tmp);
+          motion = multiply(translation(0, 0, -kick * 0.03 * WEAPON_SCALE, this.tmp2), rotZ(spin), this.tmp);
           break;
         default:
-          motion = translation(0, 0, -kick * 0.09, this.tmp);
+          motion = translation(0, 0, -kick * 0.09 * WEAPON_SCALE, this.tmp);
       }
       multiply(multiply(body, part.moving.pivot, this.tmp2), motion, part.moving.instance.model);
       w++;
