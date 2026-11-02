@@ -117,7 +117,11 @@ canvas { display: block; width: 100%; height: 100%; }
   clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px); }
 .lifebar .fill { height: 100%; background: linear-gradient(90deg, #ff3fb4, #4ff2ff 45%); background-size: 240px 100%; transition: width 0.12s; box-shadow: 0 0 6px var(--cy-dim); }
 .lifebar::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 11px, rgba(4, 10, 18, 0.6) 11px 12px); pointer-events: none; }
-.lifebar.own { position: fixed; left: 50%; bottom: 52px; width: 240px; height: 12px; transform: translateX(-50%); pointer-events: none; border-color: var(--cy); box-shadow: 0 0 12px var(--cy-faint); }
+.stamina.own { position: fixed; left: 50%; bottom: 47px; width: 240px; height: 4px; transform: translateX(-50%); pointer-events: none; background: rgba(4, 10, 18, 0.7); border: 1px solid var(--cy-faint); overflow: hidden; transition: opacity 0.4s; }
+.stamina.own .fill { height: 100%; background: var(--cy-dim); transition: width 0.1s, background 0.3s; }
+.stamina.own.winded .fill { background: var(--mg); box-shadow: 0 0 6px var(--mg); }
+.stamina.own.full { opacity: 0.35; }
+.lifebar.own { position: fixed; left: 50%; bottom: 56px; width: 240px; height: 12px; transform: translateX(-50%); pointer-events: none; border-color: var(--cy); box-shadow: 0 0 12px var(--cy-faint); }
 .lifebar.own span { position: absolute; inset: 0; z-index: 1; text-align: center; color: #fff; font: 600 9px/12px var(--mono); letter-spacing: 0.12em; text-shadow: 0 0 4px #000, 0 1px 2px #000; }
 #cracked { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); color: var(--mg); font: 700 30px/1.2 var(--mono); letter-spacing: 0.2em; text-transform: uppercase; text-align: center;
   text-shadow: 0 0 14px rgba(255, 63, 180, 0.8), 0 2px 8px #000; pointer-events: none; animation: cracked-flicker 1.6s steps(2) infinite; }

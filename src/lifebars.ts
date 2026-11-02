@@ -22,9 +22,23 @@ export class LifeBars {
     root.append(fill, text);
     parent.appendChild(root);
     this.own = { root, fill, text };
+    const stamina = document.createElement('div');
+    stamina.className = 'stamina own';
+    const sfill = document.createElement('div');
+    sfill.className = 'fill';
+    stamina.appendChild(sfill);
+    parent.appendChild(stamina);
+    this.stamina = { root: stamina, fill: sfill };
   }
 
-  update(camera: CameraLike, canvas: HTMLCanvasElement, me: Combatant, others: Combatant[]): void {
+  /** The player's sprint bar, under the life bar. */
+  private readonly stamina: { root: HTMLDivElement; fill: HTMLDivElement };
+
+  /** `stamina`: the player's sprint left, 0..1; `winded`: spent, and not back yet. */
+  update(camera: CameraLike, canvas: HTMLCanvasElement, me: Combatant, others: Combatant[], stamina = 1, winded = false): void {
+    this.stamina.fill.style.width = `${Math.max(0, Math.min(1, stamina)) * 100}%`;
+    this.stamina.root.classList.toggle('winded', winded);
+    this.stamina.root.classList.toggle('full', stamina >= 1);
     const r = canvas.getBoundingClientRect();
     const pv = multiply(camera.projection(r.width / r.height), camera.view());
     const seen = new Set<Combatant>();
@@ -69,6 +83,6 @@ export class LifeBars {
   private paint(fill: HTMLDivElement, share: number): void {
     const s = Math.max(0, Math.min(1, share));
     fill.style.width = `${s * 100}%`;
-    fill.style.background = s > 0.5 ? '#5fcf6a' : s > 0.25 ? '#e0b43a' : '#e0553a';
+    fill.style.background = s > 0.5 ? 'linear-gradient(90deg, #1fb8c8, #4ff2ff)' : s > 0.25 ? 'linear-gradient(90deg, #d9a21f, #ffd84f)' : 'linear-gradient(90deg, #c02070, #ff3fb4)';
   }
 }

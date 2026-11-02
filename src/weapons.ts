@@ -1,4 +1,4 @@
-import { Mesh, MeshBuilder, box, material, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { Mesh, MeshBuilder, box, material, multiply, rotationY, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { DAMAGE, type Combatant } from './combat';
 import { impactFx, type Hit, type Obstacle, type World } from './impacts';
 import { pieceType, type PieceKind } from './shell';
@@ -12,11 +12,12 @@ import { CANNON_SPEED, isPartRef, type Mounted, type Structure } from './structu
  * - the guns stream tracers while held (the gatling after spinning up); they hit at once (a ray
  *   against the world; the tracer lasts the flight and the hit plays when it lands);
  * - the flamethrower pours flame while held, and sets wood alight;
- * - the knocker is a ball on a chain: holding pumps the swing in the direction it is already
- *   going, and whatever the ball meets at speed takes it;
- * - the spiky ball cannon fires a spiked ball on a chain; a second pull reels it back in, and it
- *   hits on the way out and on the way back;
- * - the fireworks gun lets off a handful of rockets that wander and pop.
+ * - the knocker is a ball on a chain of links (a rope simulated point by point, so it sways and
+ *   swings): holding hauls the ball up and back behind the pole, letting go sends it swinging
+ *   forward, and whatever the ball meets at speed takes it;
+ * - the spiky ball cannon fires a spiked ball trailing the same kind of chain; a second pull reels
+ *   it back in, and it hits on the way out and on the way back;
+ * - the fireworks gun lets off a handful of rockets, straight at the aim, that wander and pop.
  * Ammunition is limited (the knocker and the spiky ball never run out); pickups refill it.
  * Hits hurt crabs and break the pieces built on their shells.
  */
@@ -41,8 +42,21 @@ interface Tether {
   pos: Vec3;
   vel: Vec3;
   ball: Instance;
-  chain: Instance;
+  /** The chain: a rope from the muzzle to the ball, drawn as links. */
+  rope: Rope;
+  links: Instance[];
+  /** Landed on something (else it hangs in the air at the chain's end and falls). */
+  resting: boolean;
   hitCool: number;
+}
+
+/** The knocker's chain and ball. */
+interface Flail {
+  rope: Rope;
+  ball: Instance;
+  links: Instance[];
+  /** How far it has been hauled back, 0..1 (the trigger held). */
+  drawn: number;
 }
 
 /** A firework rocket in the air. */
@@ -68,11 +82,15 @@ export const AMMO: Record<PieceKind, number> = { plank: 0, beam: 0, joint: 0, ca
 const SPIKE_SPEED = 22;
 const CHAIN_REACH = 14;
 const REEL_SPEED = 20;
-/** The knocker: gravity on its pendulum, how hard a held trigger pumps it, how fast the ball must go to hurt, the speed at which it does all it can. */
-const KNOCK_GRAVITY = 24;
-const KNOCK_PUMP = 7;
+/** The knocker: links in its chain, how long hauling it right back takes, the swing a full haul gives on release, how fast the ball must go to hurt, the speed at which it does all it can. */
+const KNOCK_LINKS = 12;
+const KNOCK_DRAW_SECONDS = 0.5;
+const KNOCK_RELEASE = 11;
 const KNOCK_MIN_SPEED = 3.5;
-const KNOCK_FULL_SPEED = 10;
+const KNOCK_FULL_SPEED = 11;
+/** The spiky ball's chain: links in it. */
+const SPIKE_LINKS = 24;
+const GRAVITY = 20;
 const FIREWORK_COLORS: [Vec3, Vec3][] = [[[1, 0.3, 0.3], [1, 0.8, 0.2]], [[0.3, 0.6, 1], [0.8, 0.4, 1]], [[0.3, 1, 0.4], [1, 1, 0.5]], [[1, 0.5, 0.9], [0.5, 0.9, 1]], [[1, 0.85, 0.3], [1, 0.4, 0.1]]];
 
 export class Arsenal {
@@ -85,6 +103,7 @@ export class Arsenal {
   private readonly ammo = new Map<Mounted, number>();
   private readonly knockHits = new Map<unknown, number>();
   private readonly tethers = new Map<Mounted, Tether>();
+  private readonly flails = new Map<Mounted, Flail>();
   private readonly rockets: Rocket[] = [];
   private readonly balls: Ball[] = [];
   private readonly pending: Pending[] = [];
@@ -94,15 +113,48 @@ export class Arsenal {
   private readonly flashes: { at: Vec3; color: Vec3; ttl: number; life: number; radius: number; intensity: number }[] = [];
   private readonly ballMesh: Mesh;
   private readonly spikeMesh: Mesh;
-  private readonly chainMesh: Mesh;
+  private readonly knockerMesh: Mesh;
+  private readonly linkMesh: Mesh;
   private readonly ballMaterial = material({ roughness: 0.5, metallic: 0.5 });
 
   /** Who fires: their own box and pieces are never hit. `damageScale` softens an opponent's guns; `infinite` ammo for them too. */
   constructor(private readonly renderer: Renderer, public structure: Structure, private readonly world: World, private readonly owner: unknown, private readonly damageScale = 1, private readonly infinite = false) {
     this.ballMesh = new Mesh(renderer.gl, sphere(0.15, BALL));
     this.spikeMesh = new Mesh(renderer.gl, spikedBall(0.2, SPIKE));
-    this.chainMesh = new Mesh(renderer.gl, box(-0.025, 0, -0.025, 0.025, 1, 0.025, [0.3, 0.3, 0.33]));
+    this.knockerMesh = new Mesh(renderer.gl, spikedBall(0.36, BALL));
+    this.linkMesh = new Mesh(renderer.gl, chainLink());
     for (const m of structure.weapons) this.ammo.set(m, AMMO[m.piece.kind]);
+  }
+
+  /** `n` link instances for a chain, hidden until posed. */
+  private makeLinks(n: number): Instance[] {
+    const links: Instance[] = [];
+    for (let i = 0; i < n; i++) links.push({ mesh: this.linkMesh, model: new Float32Array(16), material: this.ballMaterial, hidden: true });
+    this.renderer.instances.push(...links);
+    return links;
+  }
+
+  /** Pose a chain's links along a rope, each turned a quarter from the last so they read as a chain. */
+  private poseLinks(links: Instance[], rope: Rope): void {
+    for (let i = 0; i < links.length; i++) {
+      const link = links[i];
+      link.hidden = false;
+      alongMatrix(this.tmpA, rope.pts[i], rope.pts[i + 1]);
+      multiply(this.tmpA, rotationY((i % 2) * Math.PI * 0.5, this.tmpB), link.model as Float32Array);
+    }
+  }
+
+  private readonly tmpA = new Float32Array(16);
+  private readonly tmpB = new Float32Array(16);
+
+  /** Take a weapon's chain off the beach (the piece broke off). */
+  private forget(m: Mounted): void {
+    const t = this.tethers.get(m);
+    const f = this.flails.get(m);
+    const gone = [...(t ? [t.ball, ...t.links] : []), ...(f ? [f.ball, ...f.links] : [])];
+    if (gone.length) removeInstances(this.renderer, gone);
+    this.tethers.delete(m);
+    this.flails.delete(m);
   }
 
   get weapon(): Mounted | null {
@@ -152,6 +204,8 @@ export class Arsenal {
       }
     }
     for (const [k, t] of this.knockHits) if (t <= this.clock) this.knockHits.delete(k);
+    // Chains of weapons that have broken off go with them.
+    for (const m of [...this.tethers.keys(), ...this.flails.keys()]) if (!this.structure.weapons.includes(m)) this.forget(m);
     for (const m of this.structure.weapons) {
       m.kick = Math.max(0, m.kick - dt * 6);
       this.cooldown.set(m, Math.max(0, (this.cooldown.get(m) ?? 0) - dt));
@@ -226,9 +280,10 @@ export class Arsenal {
             w.kick = 1;
             for (let k = 0; k < 6; k++) {
               const [c0, c1] = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
-              const spread = 0.35;
-              const d: Vec3 = [facing[0] + (Math.random() - 0.5) * spread, facing[1] + Math.random() * 0.3, facing[2] + (Math.random() - 0.5) * spread];
-              const sp = 11 + Math.random() * 5;
+              // Straight at the aim with a little scatter (the rockets wander on their own once out).
+              const spread = 0.22;
+              const d: Vec3 = [facing[0] + (Math.random() - 0.5) * spread, facing[1] + (Math.random() - 0.5) * 0.1, facing[2] + (Math.random() - 0.5) * spread];
+              const sp = 14 + Math.random() * 5;
               this.rockets.push({ pos: [muzzle[0], muzzle[1], muzzle[2]], vel: [d[0] * sp, d[1] * sp, d[2] * sp], life: 0.7 + Math.random() * 0.9, phase: Math.random() * Math.PI * 2, color: c0, colorTo: c1, wobble: 6 + Math.random() * 10 });
             }
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 20, color: [0.6, 0.6, 0.6], colorTo: [0.35, 0.35, 0.35], speed: 2, dir: facing, cone: 0.6, life: 1.2, size: 0.25, drag: 1.2, alpha: 0.5, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
@@ -276,22 +331,55 @@ export class Arsenal {
 
   // ---------- the knocker: a pendulum, pumped while held
 
-  private swingKnocker(m: Mounted, dt: number, pumping: boolean): void {
+  /**
+   * The chain hangs from the arm's ring as a rope with the ball on its end. Held, the ball is hauled up
+   * and back behind the pole and kept there; let go, it swings forward with the haul behind it, then
+   * swings itself out under gravity. Whatever the ball meets at speed takes a blow.
+   */
+  private swingKnocker(m: Mounted, dt: number, holding: boolean): void {
     const L = m.chainLength;
-    let a = -(KNOCK_GRAVITY / L) * Math.sin(m.swing) - 0.35 * m.swingRate;
-    if (pumping) a += (KNOCK_PUMP * (m.swingRate >= 0 ? 1 : -1)) / Math.max(0.6, L);
-    m.swingRate += a * dt;
-    m.swing += m.swingRate * dt;
-    const speed = Math.abs(m.swingRate) * L;
+    const anchor = m.anchor;
+    let f = this.flails.get(m);
+    if (!f) {
+      f = { rope: new Rope(KNOCK_LINKS, L / KNOCK_LINKS, anchor, [anchor[0], anchor[1] - L, anchor[2]]), ball: { mesh: this.knockerMesh, model: new Float32Array(16), material: this.ballMaterial }, links: this.makeLinks(KNOCK_LINKS), drawn: 0 };
+      this.renderer.instances.push(f.ball);
+      this.flails.set(m, f);
+    }
+    const fwd = m.direction;
+    const ball = f.rope.end;
+    let pull: Vec3 | null = null;
+    let endDrag = 0.5;
+    if (holding) {
+      // Hauled back: a stiff pull toward a point behind and below the ring, damped hard so it hangs there.
+      f.drawn = Math.min(1, f.drawn + dt / KNOCK_DRAW_SECONDS);
+      const back = 0.3 + 0.6 * f.drawn;
+      const target: Vec3 = [anchor[0] - fwd[0] * L * back, anchor[1] - L * (1 - back * back) * 0.8, anchor[2] - fwd[2] * L * back];
+      pull = [(target[0] - ball[0]) * 90, (target[1] - ball[1]) * 90, (target[2] - ball[2]) * 90];
+      endDrag = 7;
+    } else if (f.drawn > 0) {
+      // Let go: the ball is thrown forward by the haul (velocity in verlet is the step from the last position).
+      const v = KNOCK_RELEASE * f.drawn * dt;
+      f.rope.prev[KNOCK_LINKS][0] -= fwd[0] * v;
+      f.rope.prev[KNOCK_LINKS][2] -= fwd[2] * v;
+      f.drawn = 0;
+    }
+    f.rope.step(dt, anchor, null, pull, 0.6, endDrag);
+    // The ball never goes under the sand.
+    const floor = this.world.heightAt(ball[0], ball[2]) + 0.4;
+    if (ball[1] < floor) ball[1] = floor;
+    m.muzzle = [ball[0], ball[1], ball[2]];
+    this.poseLinks(f.links, f.rope);
+    translation(ball[0], ball[1], ball[2], f.ball.model as Float32Array);
+    const vel = f.rope.endVelocity(dt);
+    const speed = Math.hypot(vel[0], vel[1], vel[2]);
     if (speed < KNOCK_MIN_SPEED) return;
-    // The ball is where the last pose put it; whatever it reaches takes a blow by its speed, once each half a second.
-    for (const o of this.world.near(m.muzzle, 0.45, this.owner)) {
+    // Whatever the ball reaches takes a blow by its speed, once each half a second; the blow slows the ball.
+    for (const o of this.world.near(m.muzzle, 0.5, this.owner)) {
       const key = o.owner;
       if (this.knockHits.has(key)) continue;
       this.knockHits.set(key, this.clock + 0.5);
       this.hurtBox(o, DAMAGE.knocker * Math.min(1, speed / KNOCK_FULL_SPEED), 3);
-      // The blow slows the ball.
-      m.swingRate *= 0.55;
+      f.rope.slowEnd(0.45);
     }
   }
 
@@ -300,8 +388,8 @@ export class Arsenal {
   private spikeball(w: Mounted, pulled: boolean, dt: number, muzzle: Vec3, facing: Vec3): void {
     let t = this.tethers.get(w);
     if (!t) {
-      t = { phase: 'ready', pos: [0, 0, 0], vel: [0, 0, 0], ball: { mesh: this.spikeMesh, model: new Float32Array(16), material: this.ballMaterial, hidden: true }, chain: { mesh: this.chainMesh, model: new Float32Array(16), material: this.ballMaterial, hidden: true }, hitCool: 0 };
-      this.renderer.instances.push(t.ball, t.chain);
+      t = { phase: 'ready', pos: [0, 0, 0], vel: [0, 0, 0], ball: { mesh: this.spikeMesh, model: new Float32Array(16), material: this.ballMaterial, hidden: true }, rope: new Rope(SPIKE_LINKS, CHAIN_REACH / SPIKE_LINKS, muzzle, muzzle), links: this.makeLinks(SPIKE_LINKS), resting: false, hitCool: 0 };
+      this.renderer.instances.push(t.ball);
       this.tethers.set(w, t);
     }
     if (pulled) {
@@ -309,8 +397,10 @@ export class Arsenal {
         t.phase = 'flying';
         t.pos = [muzzle[0], muzzle[1], muzzle[2]];
         t.vel = [facing[0] * SPIKE_SPEED, facing[1] * SPIKE_SPEED, facing[2] * SPIKE_SPEED];
+        t.resting = false;
+        // The chain pays out from the drum: every link starts at the muzzle and is dragged out behind the ball.
+        t.rope.reset(muzzle, muzzle);
         t.ball.hidden = false;
-        t.chain.hidden = false;
         w.kick = 1;
         this.flash(muzzle, [1, 0.75, 0.35], 0.1, 6, 45);
         this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 14, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 5, dir: facing, cone: 0.35, life: 0.18, size: 0.16, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
@@ -325,9 +415,34 @@ export class Arsenal {
         this.land(hit, 2, DAMAGE.spikeball);
         t.pos = [hit.point[0] + hit.normal[0] * 0.2, hit.point[1] + hit.normal[1] * 0.2, hit.point[2] + hit.normal[2] * 0.2];
         t.phase = 'landed';
+        t.resting = true;
       } else {
         t.pos = next;
-        if (Math.hypot(next[0] - muzzle[0], next[1] - muzzle[1], next[2] - muzzle[2]) > CHAIN_REACH) t.phase = 'landed';
+        if (Math.hypot(next[0] - muzzle[0], next[1] - muzzle[1], next[2] - muzzle[2]) > CHAIN_REACH) {
+          // The chain is out: the ball is caught short and drops.
+          t.phase = 'landed';
+          t.vel = [t.vel[0] * 0.2, Math.min(0, t.vel[1]), t.vel[2] * 0.2];
+        }
+      }
+    } else if (t.phase === 'landed') {
+      // Caught at the chain's end: it falls until it lands; walking off drags it along.
+      const d: Vec3 = [t.pos[0] - muzzle[0], t.pos[1] - muzzle[1], t.pos[2] - muzzle[2]];
+      const l = Math.hypot(d[0], d[1], d[2]);
+      if (l > CHAIN_REACH) {
+        const k = CHAIN_REACH / l;
+        t.pos = [muzzle[0] + d[0] * k, muzzle[1] + d[1] * k, muzzle[2] + d[2] * k];
+        t.resting = false;
+      }
+      if (!t.resting) {
+        t.vel[1] -= GRAVITY * dt;
+        const next: Vec3 = [t.pos[0] + t.vel[0] * dt, t.pos[1] + t.vel[1] * dt, t.pos[2] + t.vel[2] * dt];
+        const hit = this.world.segment(t.pos, next, this.owner);
+        if (hit) {
+          t.pos = [hit.point[0] + hit.normal[0] * 0.2, hit.point[1] + hit.normal[1] * 0.2, hit.point[2] + hit.normal[2] * 0.2];
+          t.vel = [0, 0, 0];
+          t.resting = true;
+          impactFx(this.renderer, hit, 1);
+        } else t.pos = next;
       }
     } else if (t.phase === 'reeling') {
       const d: Vec3 = [muzzle[0] - t.pos[0], muzzle[1] - t.pos[1], muzzle[2] - t.pos[2]];
@@ -335,7 +450,7 @@ export class Arsenal {
       if (l < 0.6) {
         t.phase = 'ready';
         t.ball.hidden = true;
-        t.chain.hidden = true;
+        for (const link of t.links) link.hidden = true;
       } else {
         const step = Math.min(l, REEL_SPEED * dt);
         const next: Vec3 = [t.pos[0] + (d[0] / l) * step, t.pos[1] + (d[1] / l) * step, t.pos[2] + (d[2] / l) * step];
@@ -351,7 +466,10 @@ export class Arsenal {
     }
     if (t.phase !== 'ready') {
       translation(t.pos[0], t.pos[1], t.pos[2], t.ball.model as Float32Array);
-      alongMatrix(t.chain.model as Float32Array, muzzle, t.pos);
+      // The chain between the muzzle and the ball sags, sways and drags on the sand.
+      t.rope.step(dt, muzzle, t.pos, null, 1.2, 0);
+      t.rope.floor((x, z) => this.world.heightAt(x, z) + 0.08);
+      this.poseLinks(t.links, t.rope);
     }
   }
 
@@ -369,7 +487,7 @@ export class Arsenal {
       const wob = Math.sin(r.phase) * 18;
       r.vel[0] += (px * wob - r.vel[0] * 0.6) * dt;
       r.vel[2] += (pz * wob - r.vel[2] * 0.6) * dt;
-      r.vel[1] += (Math.cos(r.phase * 0.7) * 10 - 5 - r.vel[1] * 0.6) * dt;
+      r.vel[1] += (Math.cos(r.phase * 0.7) * 5 - 2 - r.vel[1] * 0.6) * dt;
       r.pos[0] += r.vel[0] * dt;
       r.pos[1] += r.vel[1] * dt;
       r.pos[2] += r.vel[2] * dt;
@@ -450,15 +568,169 @@ export class Arsenal {
 
   /** Take the balls and chains off the beach (an opponent gone). */
   dispose(): void {
-    const gone = new Set<Instance>([...this.balls.map((b) => b.instance), ...[...this.tethers.values()].flatMap((t) => [t.ball, t.chain])]);
-    const list = this.renderer.instances;
-    let k = 0;
-    for (let i = 0; i < list.length; i++) if (!gone.has(list[i])) list[k++] = list[i];
-    list.length = k;
+    removeInstances(this.renderer, [...this.balls.map((b) => b.instance), ...[...this.tethers.values()].flatMap((t) => [t.ball, ...t.links]), ...[...this.flails.values()].flatMap((f) => [f.ball, ...f.links])]);
     this.balls.length = 0;
     this.tethers.clear();
+    this.flails.clear();
     this.rockets.length = 0;
   }
+}
+
+function removeInstances(renderer: Renderer, instances: Instance[]): void {
+  const gone = new Set(instances);
+  const list = renderer.instances;
+  let k = 0;
+  for (let i = 0; i < list.length; i++) if (!gone.has(list[i])) list[k++] = list[i];
+  list.length = k;
+}
+
+/**
+ * A chain as a rope of points stepped by Verlet integration: each point keeps its last position, so its
+ * velocity is the step it took; gravity and drag act, then the distance between neighbours is put back
+ * a few times over. The first point is pinned to an anchor; the last is either free and heavy (the
+ * knocker's ball) or pinned to a position the physics owns (the spiky ball).
+ */
+class Rope {
+  readonly pts: Vec3[] = [];
+  readonly prev: Vec3[] = [];
+
+  constructor(readonly n: number, readonly seg: number, from: Vec3, to: Vec3) {
+    for (let i = 0; i <= n; i++) {
+      this.pts.push([0, 0, 0]);
+      this.prev.push([0, 0, 0]);
+    }
+    this.reset(from, to);
+  }
+
+  /** Lay the rope in a straight line from `from` to `to`, still. */
+  reset(from: Vec3, to: Vec3): void {
+    for (let i = 0; i <= this.n; i++) {
+      const t = i / this.n;
+      const p = this.pts[i];
+      p[0] = from[0] + (to[0] - from[0]) * t;
+      p[1] = from[1] + (to[1] - from[1]) * t;
+      p[2] = from[2] + (to[2] - from[2]) * t;
+      this.prev[i].splice(0, 3, p[0], p[1], p[2]);
+    }
+  }
+
+  get end(): Vec3 {
+    return this.pts[this.n];
+  }
+
+  /** The last point's velocity over the step just taken. */
+  endVelocity(dt: number): Vec3 {
+    const p = this.pts[this.n];
+    const q = this.prev[this.n];
+    const k = 1 / Math.max(dt, 1e-4);
+    return [(p[0] - q[0]) * k, (p[1] - q[1]) * k, (p[2] - q[2]) * k];
+  }
+
+  /** Scale the last point's velocity (a blow landed). */
+  slowEnd(k: number): void {
+    const p = this.pts[this.n];
+    const q = this.prev[this.n];
+    for (let a = 0; a < 3; a++) q[a] = p[a] - (p[a] - q[a]) * k;
+  }
+
+  /**
+   * A frame. `anchor` pins the first point; `endAt` pins the last (null: it is a free, heavy ball);
+   * `pull` is an acceleration on a free last point; `drag` per second on every point, `endDrag` extra on the last.
+   */
+  step(dt: number, anchor: Vec3, endAt: Vec3 | null, pull: Vec3 | null, drag: number, endDrag: number): void {
+    const n = this.n;
+    const g = -GRAVITY * dt * dt;
+    for (let i = 1; i <= n; i++) {
+      const p = this.pts[i];
+      const q = this.prev[i];
+      if (i === n && endAt) {
+        q.splice(0, 3, p[0], p[1], p[2]);
+        p.splice(0, 3, endAt[0], endAt[1], endAt[2]);
+        continue;
+      }
+      const k = Math.max(0, 1 - (drag + (i === n ? endDrag : 0)) * dt);
+      const vx = (p[0] - q[0]) * k;
+      const vy = (p[1] - q[1]) * k;
+      const vz = (p[2] - q[2]) * k;
+      q.splice(0, 3, p[0], p[1], p[2]);
+      p[0] += vx;
+      p[1] += vy + g;
+      p[2] += vz;
+      if (i === n && pull) {
+        p[0] += pull[0] * dt * dt;
+        p[1] += pull[1] * dt * dt;
+        p[2] += pull[2] * dt * dt;
+      }
+    }
+    this.pts[0].splice(0, 3, anchor[0], anchor[1], anchor[2]);
+    for (let it = 0; it < 10; it++) {
+      for (let i = 0; i < n; i++) {
+        const a = this.pts[i];
+        const b = this.pts[i + 1];
+        const dx = b[0] - a[0];
+        const dy = b[1] - a[1];
+        const dz = b[2] - a[2];
+        const l = Math.hypot(dx, dy, dz) || 1e-6;
+        const diff = (l - this.seg) / l;
+        // Who gives: the anchor never, a pinned end never, the heavy ball little, links between them half each.
+        let wa = 0.5;
+        let wb = 0.5;
+        if (i === 0) {
+          wa = 0;
+          wb = 1;
+        }
+        if (i + 1 === n) {
+          if (endAt) {
+            wa = i === 0 ? 0 : 1;
+            wb = 0;
+          } else if (i > 0) {
+            wa = 0.85;
+            wb = 0.15;
+          }
+        }
+        a[0] += dx * diff * wa;
+        a[1] += dy * diff * wa;
+        a[2] += dz * diff * wa;
+        b[0] -= dx * diff * wb;
+        b[1] -= dy * diff * wb;
+        b[2] -= dz * diff * wb;
+      }
+    }
+  }
+
+  /** Keep every free point above the ground (`height` at x, z), so a slack chain lies on the sand rather than under it. */
+  floor(height: (x: number, z: number) => number): void {
+    for (let i = 1; i < this.n; i++) {
+      const p = this.pts[i];
+      const h = height(p[0], p[2]);
+      if (p[1] < h) p[1] = h;
+    }
+  }
+}
+
+/** One link of chain, a unit long along +y (scaled to the segment when posed): a rod with a bar either side, an elongated ring. */
+function chainLink(): MeshData {
+  const c: Vec = [0.3, 0.3, 0.33];
+  const d: Vec = [0.22, 0.22, 0.25];
+  const parts = [box(-0.018, 0, -0.018, 0.018, 1, 0.018, d), box(0.03, 0.12, -0.014, 0.058, 0.88, 0.014, c), box(-0.058, 0.12, -0.014, -0.03, 0.88, 0.014, c), box(-0.058, 0.06, -0.014, 0.058, 0.13, 0.014, c), box(-0.058, 0.87, -0.014, 0.058, 0.94, 0.014, c)];
+  let nv = 0;
+  let ni = 0;
+  for (const p of parts) {
+    nv += p.vertices.length;
+    ni += p.indices.length;
+  }
+  const vertices = new Float32Array(nv);
+  const indices = new Uint32Array(ni);
+  let vo = 0;
+  let io = 0;
+  for (const p of parts) {
+    vertices.set(p.vertices, vo);
+    const base = vo / 11;
+    for (let i = 0; i < p.indices.length; i++) indices[io + i] = p.indices[i] + base;
+    vo += p.vertices.length;
+    io += p.indices.length;
+  }
+  return { vertices, indices };
 }
 
 /** `out` stands a unit rod (built along +y from 0 to 1) from `from` to `to`. */

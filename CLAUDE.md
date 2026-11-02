@@ -56,10 +56,13 @@ src/shell.ts    the Battle Shell: 5 shell types (deck grid, speed / jump / armou
 src/structure.ts the build drawn on the crab and kept: hp per piece (damage; at 0 it drops as tumbling debris and
                 whatever it held up falls too; onChange), fire on wood (ignite: damage over time, spreads), per-piece
                 hit boxes (boxes: PartRef owners), turrets (aim: pitch only, a gun keeps the yaw it was placed at; pose), the
-                knocker's chain as a pendulum; lights(): a point light over each burning piece
+                knocker's anchor (its chain is the Arsenal's); lights(): a point light over each burning piece; a piece
+                that breaks off bursts (impacts.ts shatter: wood splinters, metal sparks and shards, stone chips)
 src/weapons.ts  Arsenal: ammo per weapon (AMMO; refill), the chosen weapon fires on the trigger: big cannonballs,
-                hitscan tracers, flame (ignites wood), the knocker pumped by holding (hits by ball speed), the spiky
-                ball on a chain (fire, then reel), fireworks rockets that wander and pop; hits hurt crabs and pieces;
+                hitscan tracers, flame (ignites wood), the knocker (Rope: a Verlet chain of links hung from the pole's ring;
+                holding hauls the ball back, letting go swings it; hits by ball speed), the spiky ball trailing the same
+                chain (fire, then reel; caught short it drops), fireworks rockets straight at the aim that wander and pop;
+                chains of pieces that broke off go with them; hits hurt crabs and pieces;
                 lights(dt): the flame's glow, muzzle flashes, rockets and pops (main.ts fills renderer.lights each frame,
                 48 at most; a sunlit beach needs intensities in the tens to show)
 src/pickups.ts  ammo crates (refill), health boxes (half back), starfish (8 s invincible); bob, taken by walking over
@@ -106,6 +109,8 @@ a round crab pushed out of turned boxes each frame (`unblock`), so a crab can hi
 
 ## Game feel decided so far
 - Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`). Space jumps.
+  Sprinting spends stamina (`Player.stamina`, 0..1: 7 s unladen × weightFactor, back in 5 s; at 0 the crab is
+  winded until a third is back); the thin bar under the life bar, magenta when winded.
   The gait steps slowly with long strides (STEP_TRIGGER, STEP_SECONDS, STEP_LEAD in crab.ts).
 - Actions: 1 is the claws, 2-5 the weapons on the shell in build order. The left button fires the chosen
   action (claws take turns: `Crab.snapNext`); the right button aims down the barrel (`camera.aimZoom`:
