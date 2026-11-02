@@ -61,7 +61,8 @@ src/structure.ts the build drawn on the crab and kept: hp per piece (damage; at 
 src/weapons.ts  Arsenal: ammo per weapon (AMMO; refill), the chosen weapon fires on the trigger: big cannonballs,
                 hitscan tracers, flame (ignites wood), the knocker (Rope: a Verlet chain of links hung from the pole's ring;
                 holding hauls the ball back, letting go swings it; hits by ball speed), the spiky ball trailing the same
-                chain (fire, then reel; caught short it drops), fireworks rockets straight at the aim that wander and pop;
+                chain (fire; a second pull winds the chain onto the drum link by link, dragging the ball home over the sand; caught
+                short it drops), fireworks rockets straight at the aim that wander and pop;
                 chains of pieces that broke off go with them; hits hurt crabs and pieces;
                 lights(dt): the flame's glow, muzzle flashes, rockets and pops (main.ts fills renderer.lights each frame,
                 48 at most; a sunlit beach needs intensities in the tens to show)
