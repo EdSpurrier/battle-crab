@@ -4,17 +4,27 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Battle Crab</title>
-    <script type="module" crossorigin src="/battle-crab/assets/main-BoLezAT8.js"></script>
-    <link rel="modulepreload" crossorigin href="/battle-crab/assets/settings--h6RrI4O.js">
-    <link rel="modulepreload" crossorigin href="/battle-crab/assets/ground-DBKVz3cG.js">
-    <link rel="modulepreload" crossorigin href="/battle-crab/assets/pick-CMEroD9T.js">
-    <link rel="modulepreload" crossorigin href="/battle-crab/assets/structure-Br0yvzpU.js">
-    <link rel="stylesheet" crossorigin href="/battle-crab/assets/settings-BPOPFi25.css">
+    <script type="module" crossorigin src="/battle-crab/assets/main-B08I9oce.js"></script>
+    <link rel="modulepreload" crossorigin href="/battle-crab/assets/settings-BBZBhE4R.js">
+    <link rel="modulepreload" crossorigin href="/battle-crab/assets/ground-DvaQb2Uo.js">
+    <link rel="modulepreload" crossorigin href="/battle-crab/assets/pick-BtunRsEF.js">
+    <link rel="modulepreload" crossorigin href="/battle-crab/assets/structure-BR8e3ejx.js">
+    <link rel="stylesheet" crossorigin href="/battle-crab/assets/settings-DmHDgj21.css">
   </head>
   <body>
     <canvas id="gl"></canvas>
     <div id="hud">Battle Crab · <a href="./build.html">battle shell</a> · <a href="./editor.html">map maker</a> · <a href="./models.html">models</a> · <span id="hint">click to take control</span> · <span id="stats"></span></div>
     <div id="actions" aria-label="Actions"></div>
-    <div id="crosshair" aria-hidden="true"></div>
+    <div id="crosshair" aria-hidden="true">
+      <svg viewBox="-60 -60 120 120" width="120" height="120">
+        <g class="ring"><circle r="40" fill="none" stroke-dasharray="14 10" /></g>
+        <g class="ring2"><circle r="52" fill="none" stroke-dasharray="4 26" /></g>
+        <g class="brackets" fill="none">
+          <path d="M-28,-16 V-28 H-16" /><path d="M16,-28 H28 V-16" /><path d="M28,16 V28 H16" /><path d="M-16,28 H-28 V16" />
+        </g>
+        <g class="ticks"><path d="M0,-10 V-4" /><path d="M0,4 V10" /><path d="M-10,0 H-4" /><path d="M4,0 H10" /></g>
+        <circle class="dot" r="1.6" />
+      </svg>
+    </div>
   </body>
 </html>
