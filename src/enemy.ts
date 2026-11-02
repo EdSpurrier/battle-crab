@@ -2,6 +2,7 @@ import type { Renderer, Vec3 } from 'gridfall-engine';
 import { DAMAGE, type Combatant } from './combat';
 import type { Ground } from './ground';
 import { wreckFx, type World } from './impacts';
+import type { Loot } from './loot';
 import { Player } from './player';
 import { CLAWS, CLAW_KINDS, MATERIAL_IDS, PIECES, SHELLS, type Piece, type PieceKind, type ShellBuild } from './shell';
 import { Structure } from './structure';
@@ -10,8 +11,9 @@ import { Arsenal } from './weapons';
 /**
  * An opponent: the same crab, shell, deck and weapons as the player, with a random shell and a
  * random build, driven by a simple mind: close to a distance it likes, circle, face the player,
- * fire in bursts when near enough, jump now and then. Cracked at zero health: a burst of shell,
- * and the beach spawns another a few seconds later.
+ * fire in bursts when near enough, jump now and then. Cracked at zero health: it collapses, bursts,
+ * sheds its weapons onto the sand (the player can pick them up), and the beach spawns another a few
+ * seconds later.
  */
 
 const TEAM: [number, number, number, number] = [0.55, 0.7, 1, 0.45];
@@ -52,11 +54,11 @@ export class Enemy implements Combatant {
   private dyingFor = 0;
   gone = false;
 
-  constructor(private readonly renderer: Renderer, ground: Ground, private readonly world: World, at: Vec3, rand: () => number = Math.random) {
+  constructor(private readonly renderer: Renderer, ground: Ground, private readonly world: World, at: Vec3, loot: Loot, rand: () => number = Math.random) {
     const build = randomBuild(rand);
     this.build = build;
     this.player = new Player(renderer, ground, at, SHELLS.find((s) => s.id === build.shell), build.claws);
-    this.structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z));
+    this.structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z), loot);
     this.player.crab.structure = this.structure;
     this.player.crab.setTeam(TEAM);
     // What it carries slows it; pieces shot off lighten it.
@@ -114,8 +116,10 @@ export class Enemy implements Combatant {
       this.structure.update(dt);
       this.arsenal.update(dt, this.crab.body, null);
       if (this.dyingFor > 2.2) {
+        // It bursts: whatever was still on its shell is flung onto the sand (weapons for the taking).
         const b = this.crab.body;
         wreckFx(this.renderer, [b[12], b[13] + 0.3, b[14]]);
+        this.structure.shedAll();
         this.dispose();
         this.gone = true;
       }

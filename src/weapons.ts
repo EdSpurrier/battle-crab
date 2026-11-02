@@ -166,7 +166,7 @@ export class Arsenal {
 
   /** How many shots weapon `m` has left (Infinity: never runs out). */
   ammoOf(m: Mounted): number {
-    return this.infinite ? Infinity : this.ammo.get(m) ?? 0;
+    return this.infinite ? Infinity : this.ammo.get(m) ?? AMMO[m.piece.kind];
   }
 
   /** Every weapon back to full. */
@@ -206,7 +206,7 @@ export class Arsenal {
   /** Spend `n` of weapon `w`'s ammunition if it has it. */
   private spend(w: Mounted, n: number): boolean {
     if (this.infinite) return true;
-    const left = this.ammo.get(w) ?? 0;
+    const left = this.ammo.get(w) ?? AMMO[w.piece.kind];
     if (left < n) return false;
     this.ammo.set(w, left - n);
     return true;

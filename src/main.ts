@@ -8,12 +8,13 @@ import { buildGround } from './ground';
 import { World, wreckFx } from './impacts';
 import { LifeBars } from './lifebars';
 import { installLook } from './look';
+import { Loot } from './loot';
 import { loadMap } from './map';
 import { MistSet } from './mist';
 import { Pickups } from './pickups';
 import { Player } from './player';
 import { Props } from './props';
-import { CLAWS, MAX_ACTIONS, loadBuild, shellType } from './shell';
+import { CLAWS, MAX_ACTIONS, loadBuild, maxWeapons, pieceType, shellType } from './shell';
 import { Structure, type Mounted } from './structure';
 import { Arsenal } from './weapons';
 
@@ -43,7 +44,9 @@ camera.groundHeight = (x, z) => ground.heightAt(x, z);
 const build = loadBuild();
 const shell = shellType(build.shell);
 const player = new Player(renderer, ground, [map.spawn[0], 0, map.spawn[1]], shell, build.claws);
-const structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z));
+// What comes off any shell lies on the sand: weapons to pick up, rubble for a while.
+const loot = new Loot(renderer, (x, z) => ground.heightAt(x, z));
+const structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z), loot);
 player.crab.structure = structure;
 // What is carried slows the crab; pieces shot off lighten it (and may take a weapon slot with them).
 const weigh = () => player.setWeight(structure.weight() + CLAWS[build.claws].weight);
@@ -70,7 +73,7 @@ function spawnPoint(): Vec3 {
   }
   return [4, 0, 4];
 }
-for (let i = 0; i < ENEMIES; i++) enemies.push(new Enemy(renderer, ground, world, spawnPoint()));
+for (let i = 0; i < ENEMIES; i++) enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot));
 const lifeBars = new LifeBars(document.body);
 const cracked = document.createElement('div');
 cracked.id = 'cracked';
@@ -370,6 +373,13 @@ function frame(now: number): void {
     }
     showActions();
   });
+  // Loose weapons: walk over one with a slot free (and a cell for it) and it is yours, with a full load.
+  const refused = loot.update(dt, player.alive ? player.position : null, 1.4, (kind) => {
+    if (!structure.pickUp(kind)) return false;
+    say(`Picked up a ${pieceType(kind).name.toLowerCase()}`);
+    return true;
+  });
+  if (refused && noticeFor <= 0) say(`${structure.weapons.length >= maxWeapons(build.claws) ? 'No slot free' : 'No room on the deck'} for the ${pieceType(refused).name.toLowerCase()}`);
   if (noticeFor > 0) {
     noticeFor -= dt;
     if (noticeFor <= 0) notice.hidden = true;
@@ -386,12 +396,12 @@ function frame(now: number): void {
   }
   // The lights of the fight: muzzle flashes, flame, rockets and their pops, burning pieces.
   renderer.lights.lights.length = 0;
-  renderer.lights.lights.push(...arsenal.lights(dt), ...structure.lights(), ...enemies.flatMap((e) => e.lights(dt)));
+  renderer.lights.lights.push(...arsenal.lights(dt), ...structure.lights(), ...enemies.flatMap((e) => e.lights(dt)), ...loot.lights());
   if (renderer.lights.lights.length > 48) renderer.lights.lights.length = 48;
   if (enemies.length < ENEMIES) {
     respawnIn -= dt;
     if (respawnIn <= 0) {
-      enemies.push(new Enemy(renderer, ground, world, spawnPoint()));
+      enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot));
       respawnIn = 4;
     }
   }
@@ -411,4 +421,4 @@ function frame(now: number): void {
 }
 requestAnimationFrame(frame);
 // A handle on the game for the browser console (poking at the player, the enemies, the lights).
-(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera };
+(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera, loot };

@@ -1,6 +1,7 @@
 import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { shatter, type Obstacle } from './impacts';
-import { CELL, MATERIALS, burns, cellCentre, maxWeapons, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type ShellBuild, type ShellType } from './shell';
+import type { Loot } from './loot';
+import { CELL, MATERIALS, burns, canPlace, cellCentre, maxWeapons, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type PieceKind, type ShellBuild, type ShellType } from './shell';
 
 /**
  * What is built on the shell, drawn and kept: one mesh per piece in its cell, in body space,
@@ -218,15 +219,6 @@ interface Part {
   dead: boolean;
 }
 
-/** A piece that has come off: tumbling to the sand. */
-interface Debris {
-  instances: Instance[];
-  pos: Vec3;
-  vel: Vec3;
-  spin: number;
-  life: number;
-}
-
 export class Structure {
   readonly shell: ShellType;
   readonly weapons: Mounted[] = [];
@@ -234,18 +226,26 @@ export class Structure {
   onChange: (() => void) | null = null;
   private readonly parts: Part[] = [];
   private readonly instances: Instance[] = [];
-  private readonly debris: Debris[] = [];
   private readonly tmp: Mat4 = new Float32Array(16);
   private readonly tmp2: Mat4 = new Float32Array(16);
   private readonly tmp3: Mat4 = new Float32Array(16);
   private readonly barrel: Mat4 = new Float32Array(16);
   private readonly bodyYawCache = { yaw: 0 };
 
-  constructor(private readonly renderer: Renderer, readonly build: ShellBuild, private readonly groundHeight: (x: number, z: number) => number = () => 0) {
+  /** `loot` takes what comes off (weapons to pick up, rubble that lies a while); without it, pieces shot off simply vanish. */
+  constructor(private readonly renderer: Renderer, readonly build: ShellBuild, private readonly groundHeight: (x: number, z: number) => number = () => 0, private readonly loot: Loot | null = null) {
     this.shell = shellType(build.shell);
-    const gl = renderer.gl;
-    const metal = material({ roughness: 0.45, metallic: 0.6 });
-    build.pieces.forEach((piece, index) => {
+    build.pieces.forEach((piece, index) => this.addPart(piece, index));
+  }
+
+  private readonly metal = material({ roughness: 0.45, metallic: 0.6 });
+
+  /** Build piece `index` of the build: its drawing, and its turret when it is a weapon with a slot free. */
+  private addPart(piece: Piece, index: number): void {
+    const gl = this.renderer.gl;
+    const metal = this.metal;
+    const build = this.build;
+    {
       const type = pieceType(piece.kind);
       const shape = type.weapon ? scaledShape(shapeOf(piece), WEAPON_SCALE) : shapeOf(piece);
       const c = cellCentre(this.shell, piece.x, piece.y, piece.z);
@@ -255,11 +255,13 @@ export class Structure {
       const mat = type.weapon ? metal : material({ roughness: m.roughness, metallic: m.metallic });
       const instance: Instance = { mesh: new Mesh(gl, shape.fixed), model: new Float32Array(16), material: mat };
       this.instances.push(instance);
+      this.renderer.instances.push(instance);
       const hp = pieceHp(piece);
       const part: Part = { instance, local, hp, maxHp: hp, burning: 0, spreadIn: 0, dead: false };
       if (shape.moving) {
         const mi: Instance = { mesh: new Mesh(gl, shape.moving), model: new Float32Array(16), material: mat };
         this.instances.push(mi);
+        this.renderer.instances.push(mi);
         part.moving = { instance: mi, kind: piece.kind };
       }
       if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < maxWeapons(build.claws)) {
@@ -270,8 +272,35 @@ export class Structure {
         part.turret = { weapon, cell: c, mountYaw, pivot: p, muzzleRel: [mz[0] - p[0], mz[1] - p[1], mz[2] - p[2]] };
       }
       this.parts.push(part);
+    }
+  }
+
+  /** A free cell a picked-up piece can go in: on the deck floor first, then on top of what is held. */
+  freeCell(): [number, number, number] | null {
+    const alive = this.alivePieces;
+    const [cols, rows, layers] = this.shell.grid;
+    for (let y = 0; y < layers; y++) for (let z = 0; z < rows; z++) for (let x = 0; x < cols; x++) if (canPlace(this.shell, alive, [x, y, z])) return [x, y, z];
+    return null;
+  }
+
+  /** Pick a weapon up off the beach: on in a free cell, facing forward, when there is a slot and a cell for it. */
+  pickUp(kind: PieceKind): boolean {
+    if (this.weapons.length >= maxWeapons(this.build.claws)) return false;
+    const cell = this.freeCell();
+    if (!cell) return false;
+    const piece: Piece = { x: cell[0], y: cell[1], z: cell[2], kind, yaw: 0 };
+    this.build.pieces.push(piece);
+    this.addPart(piece, this.build.pieces.length - 1);
+    this.onChange?.();
+    return true;
+  }
+
+  /** Everything still on comes off at once (a cracked crab): weapons to be picked up, the rest as rubble. */
+  shedAll(): void {
+    this.parts.forEach((p, i) => {
+      if (!p.dead) this.drop(i, 2.5);
     });
-    renderer.instances.push(...this.instances);
+    this.onChange?.();
   }
 
   /** The pieces still on. */
@@ -369,30 +398,10 @@ export class Structure {
       }
       this.damage(i, BURN_DPS * dt);
     });
-    for (let k = this.debris.length - 1; k >= 0; k--) {
-      const d = this.debris[k];
-      d.vel[1] -= GRAVITY * dt;
-      d.pos[0] += d.vel[0] * dt;
-      d.pos[1] += d.vel[1] * dt;
-      d.pos[2] += d.vel[2] * dt;
-      d.spin += dt * 3;
-      d.life -= dt;
-      const g = this.groundHeight(d.pos[0], d.pos[2]);
-      if (d.pos[1] < g + 0.1) {
-        d.pos[1] = g + 0.1;
-        d.vel = [d.vel[0] * 0.5, -d.vel[1] * 0.3, d.vel[2] * 0.5];
-      }
-      const m = multiply(translation(d.pos[0], d.pos[1], d.pos[2]), multiply(rotationY(d.spin), rotationX(d.spin * 0.7)));
-      for (const inst of d.instances) (inst.model as Float32Array).set(m);
-      if (d.life <= 0) {
-        this.remove(d.instances);
-        this.debris.splice(k, 1);
-      }
-    }
   }
 
-  /** Piece `i` comes off: its drawing becomes debris, its weapon slot goes. */
-  private drop(i: number): void {
+  /** Piece `i` comes off: its drawing goes to the loot (a weapon to pick up, or rubble), its weapon slot goes. `fling`: how hard it is thrown. */
+  private drop(i: number, fling = 1): void {
     const part = this.parts[i];
     if (part.dead) return;
     part.dead = true;
@@ -400,7 +409,14 @@ export class Structure {
     const m = part.instance.model;
     const pos: Vec3 = [m[12], m[13], m[14]];
     const instances = [part.instance, ...(part.moving ? [part.moving.instance] : [])];
-    this.debris.push({ instances, pos, vel: [(Math.random() - 0.5) * 2, 1.5 + Math.random(), (Math.random() - 0.5) * 2], spin: 0, life: 3 });
+    const weapon = pieceType(this.build.pieces[i].kind).weapon;
+    if (this.loot) {
+      for (const inst of instances) {
+        const own = this.instances.indexOf(inst);
+        if (own >= 0) this.instances.splice(own, 1);
+      }
+      this.loot.add(weapon ? this.build.pieces[i].kind : null, part.instance, part.moving && part.turret ? { instance: part.moving.instance, pivot: part.turret.pivot } : undefined, pos, [(Math.random() - 0.5) * 2 * fling, (1.5 + Math.random()) * fling, (Math.random() - 0.5) * 2 * fling]);
+    } else this.remove(instances);
     // It bursts as it goes: a shower of what it was made of (weapons: iron).
     const piece = this.build.pieces[i];
     shatter(this.renderer, [pos[0], pos[1] + 0.15, pos[2]], pieceType(piece.kind).weapon ? 'metal' : piece.material ?? 'wood', 3);
@@ -507,13 +523,12 @@ export class Structure {
   }
 
   dispose(): void {
-    const gone = new Set([...this.instances, ...this.debris.flatMap((d) => d.instances)]);
+    const gone = new Set(this.instances);
     const list = this.renderer.instances;
     let k = 0;
     for (let i = 0; i < list.length; i++) if (!gone.has(list[i])) list[k++] = list[i];
     list.length = k;
     for (const i of gone) i.mesh.dispose();
-    this.debris.length = 0;
   }
 }
 

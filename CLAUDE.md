@@ -56,8 +56,9 @@ src/shell.ts    the Battle Shell: 5 shell types (deck grid, speed / jump / armou
                 tiny / medium / large / uber clampers: scale, damage, weight); a build (shell + pieces + claws);
                 cell geometry (cells may reach OVERHANG past the deck on arms), `supported` / `canPlace` (a piece
                 needs the deck's floor or a held neighbour), buildWeight / weightFactor; localStorage
-src/structure.ts the build drawn on the crab and kept: hp per piece (damage; at 0 it drops as tumbling debris and
-                whatever it held up falls too; onChange), fire on wood (ignite: damage over time, spreads), per-piece
+src/structure.ts the build drawn on the crab and kept: hp per piece (damage; at 0 it drops to the Loot, and whatever
+                it held up falls too; onChange), pickUp(kind) mounts a weapon found on the beach in a free cell
+                (freeCell: deck floor first), shedAll() flings everything off (a cracked crab), fire on wood (ignite: damage over time, spreads), per-piece
                 hit boxes (boxes: PartRef owners), turrets (aim: pitch only, a gun keeps the yaw it was placed at; pose), the
                 knocker's anchor (its chain is the Arsenal's); lights(): a point light over each burning piece; a piece
                 that breaks off bursts (impacts.ts shatter: wood splinters, metal sparks and shards, stone chips)
@@ -69,6 +70,9 @@ src/weapons.ts  Arsenal: ammo per weapon (AMMO; refill), the chosen weapon fires
                 chains of pieces that broke off go with them; hits hurt crabs and pieces;
                 lights(dt): the flame's glow, muzzle flashes, rockets and pops (main.ts fills renderer.lights each frame,
                 48 at most; a sunlit beach needs intensities in the tens to show)
+src/loot.ts     Loot: what came off any shell and lies on the sand. Rubble tumbles, lies 25 s and sinks; a weapon
+                rights itself, bobs under a cyan pulse (lights()) and is picked up by walking over it with a slot and a
+                cell free (main.ts: structure.pickUp; a notice when it does not fit); at most 12 lie about
 src/pickups.ts  ammo crates (refill), health boxes (half back), starfish (8 s invincible); bob, taken by walking over
 src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a lit cell under the pointer; left
                 places, right removes, R turns; four action slots (MAX_ACTIONS): the claws take the first when they can
@@ -110,6 +114,8 @@ Three opponents on the beach at a time (main.ts ENEMIES), spawned at least 14 un
 replaced 4 s after it is cracked. Health is the shell's armour. Hits flash the crab red. The player cracked
 keels over (`Crab.collapse`: a roll about its forward axis in `toWorld`/`poseBody`, the body sinks, the legs splay,
 the claws drop, the lids shut; 1.3 s), bursts at 1.2 s, and is back at the spawn after 3.5 s under a "Cracked!" message.
+An opponent that bursts sheds every piece still on it: its weapons lie on the sand for the player to collect (a picked-up
+weapon comes with a full load; it is not saved into the build).
 Shots never hit their shooter. Solid props (rocks, boulders, driftwood: `world.obstacles`) block walking: `Player.blockers`,
 a round crab pushed out of turned boxes each frame (`unblock`), so a crab can hide behind a rock.
 
