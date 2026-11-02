@@ -3,15 +3,18 @@ import { Crab } from './crab';
 import type { Ground } from './ground';
 
 /**
- * The player: a position on the sand, a facing (where the camera aims: the crab always faces the
- * way the player looks) and a velocity. Scuttles in any direction the input pushes, sideways as
- * readily as forward, as a crab does. The crab model follows this each frame.
+ * The player: a position on the sand, a facing and a velocity. The camera orbits freely round
+ * a standing crab (look at its face); the moment the input pushes, the crab turns to face the
+ * way it is pushed (relative to the camera) and walks that way. The crab model follows this
+ * each frame.
  */
 export class Player {
   position: Vec3;
-  /** Which way the crab faces (radians about +y): set from the camera every frame. */
+  /** Which way the crab faces (radians about +y): turns toward the walk direction, stays put otherwise. */
   yaw = 0;
   speed = 3.2;
+  /** How fast it turns to face a new direction (per second; higher is snappier). */
+  turnRate = 9;
   readonly velocity: Vec3 = [0, 0, 0];
   readonly crab: Crab;
 
@@ -20,17 +23,22 @@ export class Player {
     this.crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), this.position, this.yaw);
   }
 
-  /** Move along `dir` (a direction on the ground, not necessarily unit; zero to stand still) facing `yaw`. */
-  update(dt: number, dir: Vec3, yaw: number): void {
-    this.yaw = yaw;
+  /** Move along `dir` (a direction on the ground, not necessarily unit; zero to stand still), turning to face it. */
+  update(dt: number, dir: Vec3): void {
     const len = Math.hypot(dir[0], dir[2]);
     const x0 = this.position[0];
     const z0 = this.position[2];
     if (len > 1e-4) {
+      const nx = dir[0] / len;
+      const nz = dir[2] / len;
+      // Turn toward the walk direction the short way round, eased.
+      const want = Math.atan2(nx, nz);
+      const d = Math.atan2(Math.sin(want - this.yaw), Math.cos(want - this.yaw));
+      this.yaw += d * Math.min(1, this.turnRate * dt);
       const step = this.speed * Math.min(1, len) * dt;
       const margin = 1.5;
-      this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, x0 + (dir[0] / len) * step));
-      this.position[2] = Math.min(this.ground.size - margin, Math.max(margin, z0 + (dir[2] / len) * step));
+      this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, x0 + nx * step));
+      this.position[2] = Math.min(this.ground.size - margin, Math.max(margin, z0 + nz * step));
     }
     this.position[1] = this.ground.heightAt(this.position[0], this.position[2]);
     if (dt > 0) {

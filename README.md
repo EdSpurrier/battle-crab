@@ -7,7 +7,7 @@ bolted on to make a fighting platform. Built in TypeScript on the
 ## Running
 ```bash
 npm install          # installs gridfall-engine from GitHub at the tag in package.json and builds it
-npm run dev          # http://localhost:5182 · mouse to aim, WASD to scuttle, wheel to zoom, click to capture the mouse
+npm run dev          # http://localhost:5182 · mouse to look, WASD to walk, wheel to zoom, click to capture the mouse (Esc releases)
 npm run dev:engine   # the same on ../gridfall-engine's source, for engine work in progress
 npm run typecheck
 npm run build
