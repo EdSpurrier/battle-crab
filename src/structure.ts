@@ -1,5 +1,5 @@
-import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
-import type { Obstacle } from './impacts';
+import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { shatter, type Obstacle } from './impacts';
 import { CELL, MATERIALS, burns, cellCentre, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type ShellBuild, type ShellType } from './shell';
 
 /**
@@ -149,14 +149,10 @@ function shapeOf(piece: Piece): Shape {
         muzzle: [0, 0.015, 0.33],
       };
     case 'knocker':
-      // A pole with an arm out the top; the chain and ball hang from the arm's end and swing about it (the moving part, built hanging straight down).
+      // A pole with an arm out the top and a ring at the arm's end; the chain and ball that hang from it are the
+      // Arsenal's (a rope of links it simulates), so there is no moving part here.
       return {
-        fixed: merge([box(-0.03, -H, -0.03, 0.03, H + 0.3, 0.03, WOOD_DARK), box(-0.025, H + 0.25, 0, 0.025, H + 0.3, 0.2, WOOD_DARK), box(-0.07, -H, -0.07, 0.07, -H + 0.04, 0.07, IRON)]),
-        moving: merge([
-          box(-0.012, -CHAIN, -0.012, 0.012, 0, 0.012, IRON_LIGHT),
-          ellipsoid(0, -CHAIN - BALL * 0.6, 0, BALL, BALL, BALL, IRON),
-          ...[[BALL, 0, 0], [-BALL, 0, 0], [0, -BALL, 0], [0, 0, BALL], [0, 0, -BALL]].map(([dx, dy, dz]) => box(dx - 0.02, -CHAIN - BALL * 0.6 + dy - 0.02, dz - 0.02, dx + 0.02, -CHAIN - BALL * 0.6 + dy + 0.02, dz + 0.02, IRON_LIGHT)),
-        ]),
+        fixed: merge([box(-0.03, -H, -0.03, 0.03, H + 0.3, 0.03, WOOD_DARK), box(-0.025, H + 0.25, 0, 0.025, H + 0.3, 0.2, WOOD_DARK), box(-0.07, -H, -0.07, 0.07, -H + 0.04, 0.07, IRON), box(-0.03, H + 0.22, 0.17, 0.03, H + 0.3, 0.23, IRON_LIGHT)]),
         pivot: [0, H + 0.27, 0.2],
         muzzle: [0, H + 0.27 - CHAIN - BALL * 0.6, 0.2],
       };
@@ -192,9 +188,8 @@ export interface Mounted {
   wantPitch: number;
   /** Whether the cannon can reach the aim point at CANNON_SPEED (else it fires at its highest). */
   inRange: boolean;
-  /** The knocker: the chain's angle from hanging (radians, forward positive) and how fast it swings. */
-  swing: number;
-  swingRate: number;
+  /** The knocker: where its chain hangs from, in the world (after `pose`); the Arsenal swings the chain and sets `muzzle` to the ball. */
+  anchor: Vec3;
   /** After `pose`: where a shot leaves (the knocker: where the ball is) and the way the barrel points, in the world. */
   muzzle: Vec3;
   direction: Vec3;
@@ -268,7 +263,7 @@ export class Structure {
         part.moving = { instance: mi, kind: piece.kind };
       }
       if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < 4) {
-        const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, swing: 0, swingRate: 0, muzzle: [0, 0, 0], direction: [0, 0, 1], chainLength: (CHAIN + BALL * 0.6) * WEAPON_SCALE };
+        const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, anchor: [0, 0, 0], muzzle: [0, 0, 0], direction: [0, 0, 1], chainLength: (CHAIN + BALL * 0.6) * WEAPON_SCALE };
         this.weapons.push(weapon);
         const p = shape.pivot;
         const mz = shape.muzzle;
@@ -339,6 +334,17 @@ export class Structure {
     part.burning = BURN_SECONDS;
   }
 
+  /** The light the burning pieces give off. */
+  lights(): PointLight[] {
+    const out: PointLight[] = [];
+    for (const part of this.parts) {
+      if (part.dead || part.burning <= 0) continue;
+      const m = part.instance.model;
+      out.push({ x: m[12], y: m[13] + H * 2, z: m[14], radius: 5.5, r: 1, g: 0.5, b: 0.12, intensity: 16 + Math.random() * 8 });
+    }
+    return out;
+  }
+
   /** Fire and falling pieces, a frame on. */
   update(dt: number): void {
     const positions = new Map<string, number>();
@@ -395,7 +401,9 @@ export class Structure {
     const pos: Vec3 = [m[12], m[13], m[14]];
     const instances = [part.instance, ...(part.moving ? [part.moving.instance] : [])];
     this.debris.push({ instances, pos, vel: [(Math.random() - 0.5) * 2, 1.5 + Math.random(), (Math.random() - 0.5) * 2], spin: 0, life: 3 });
-    this.renderer.particles.emit(pos[0], pos[1], pos[2], { count: 18, color: [0.6, 0.45, 0.25], colorTo: [0.4, 0.28, 0.14], speed: 3, up: 2, life: 0.9, size: 0.06, gravity: 10, shape: 'disc' });
+    // It bursts as it goes: a shower of what it was made of (weapons: iron).
+    const piece = this.build.pieces[i];
+    shatter(this.renderer, [pos[0], pos[1] + 0.15, pos[2]], pieceType(piece.kind).weapon ? 'metal' : piece.material ?? 'wood', 3);
     const w = this.weapons.findIndex((x) => x.index === i);
     if (w >= 0) this.weapons.splice(w, 1);
   }
@@ -435,8 +443,9 @@ export class Structure {
         const ly = target[1] - body[13];
         const dx = lx - t.cell[0];
         const dz = lz - t.cell[2];
-        const yaw = Math.atan2(dx, dz) - t.mountYaw;
-        w.wantYaw = Math.max(-TRAVERSE, Math.min(TRAVERSE, Math.atan2(Math.sin(yaw), Math.cos(yaw))));
+        // No traverse: a weapon points the way it was mounted (turn it on the build screen); only the barrel elevates.
+        w.wantYaw = 0;
+        void TRAVERSE;
         const D = Math.max(0.3, Math.hypot(dx, dz) - t.pivot[2]);
         const dy = ly - (t.cell[1] + t.pivot[1]);
         let pitch = Math.atan2(dy, D);
@@ -450,7 +459,6 @@ export class Structure {
             w.inRange = false;
           }
         }
-        if (w.piece.kind === 'fireworks') pitch = Math.max(pitch, (35 * Math.PI) / 180);
         w.wantPitch = w.piece.kind === 'knocker' ? 0 : Math.max(ELEVATE[0], Math.min(ELEVATE[1], pitch));
       } else {
         w.wantYaw = 0;
@@ -472,13 +480,12 @@ export class Structure {
       if (!t) continue;
       const w = t.weapon;
       if (w.piece.kind === 'knocker') {
-        // The chain hangs from the arm's end and swings about it (forward positive).
-        multiply(multiply(part.instance.model, translation(t.pivot[0], t.pivot[1], t.pivot[2], this.tmp), this.tmp2), rotationX(-w.swing, this.tmp3), this.barrel);
-        const ball = transformPoint(this.barrel, [0, -w.chainLength / WEAPON_SCALE * WEAPON_SCALE, 0]);
-        w.muzzle = [ball[0], ball[1], ball[2]];
-        const dl = Math.hypot(this.barrel[8], this.barrel[9], this.barrel[10]) || 1;
-        w.direction = [this.barrel[8] / dl, this.barrel[9] / dl, this.barrel[10] / dl];
-        if (part.moving) (part.moving.instance.model as Float32Array).set(this.barrel);
+        // The chain hangs from the arm's end; its direction is the mount's forward (the way a drawn-back ball swings).
+        const m = part.instance.model;
+        const a = transformPoint(m, t.pivot);
+        w.anchor = [a[0], a[1], a[2]];
+        const dl = Math.hypot(m[8], m[9], m[10]) || 1;
+        w.direction = [m[8] / dl, m[9] / dl, m[10] / dl];
         continue;
       }
       multiply(multiply(part.instance.model, translation(t.pivot[0], t.pivot[1], t.pivot[2], this.tmp), this.tmp2), rotationX(-w.aimPitch, this.tmp3), this.barrel);

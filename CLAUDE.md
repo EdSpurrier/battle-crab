@@ -55,10 +55,16 @@ src/shell.ts    the Battle Shell: 5 shell types (deck grid, speed / jump / armou
                 needs the deck's floor or a held neighbour), buildWeight / weightFactor; localStorage
 src/structure.ts the build drawn on the crab and kept: hp per piece (damage; at 0 it drops as tumbling debris and
                 whatever it held up falls too; onChange), fire on wood (ignite: damage over time, spreads), per-piece
-                hit boxes (boxes: PartRef owners), turrets (aim / pose), the knocker's chain as a pendulum
+                hit boxes (boxes: PartRef owners), turrets (aim: pitch only, a gun keeps the yaw it was placed at; pose), the
+                knocker's anchor (its chain is the Arsenal's); lights(): a point light over each burning piece; a piece
+                that breaks off bursts (impacts.ts shatter: wood splinters, metal sparks and shards, stone chips)
 src/weapons.ts  Arsenal: ammo per weapon (AMMO; refill), the chosen weapon fires on the trigger: big cannonballs,
-                hitscan tracers, flame (ignites wood), the knocker pumped by holding (hits by ball speed), the spiky
-                ball on a chain (fire, then reel), fireworks rockets that wander and pop; hits hurt crabs and pieces
+                hitscan tracers, flame (ignites wood), the knocker (Rope: a Verlet chain of links hung from the pole's ring;
+                holding hauls the ball back, letting go swings it; hits by ball speed), the spiky ball trailing the same
+                chain (fire, then reel; caught short it drops), fireworks rockets straight at the aim that wander and pop;
+                chains of pieces that broke off go with them; hits hurt crabs and pieces;
+                lights(dt): the flame's glow, muzzle flashes, rockets and pops (main.ts fills renderer.lights each frame,
+                48 at most; a sunlit beach needs intensities in the tens to show)
 src/pickups.ts  ammo crates (refill), health boxes (half back), starfish (8 s invincible); bob, taken by walking over
 src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a lit cell under the pointer; left
                 places, right removes, R turns; weapons take action slots 2-5 in placement order (4 at most)
@@ -66,7 +72,8 @@ src/impacts.ts  World: what shots hit (the heightfield, boulders, the crabs' box
                 surface and normal; impact effects by surface (sand, rock, shell); wreckFx for a cracked crab
 src/combat.ts   Combatant (health, hurt), DAMAGE per weapon, crabBox (a crab's hit box, owner = the combatant)
 src/enemy.ts    Enemy: a Player with a random shell and build, a blue team tint, a softer Arsenal (damage × 0.3,
-                a wandering aim error); a mind that keeps a distance, circles, fires in bursts, jumps; wrecks at 0
+                a wandering aim error); a mind that keeps a distance, circles, fires in bursts, jumps; at 0 health it
+                collapses, bursts 2.2 s later and is `gone` (main.ts then drops it and counts the kill)
 src/lifebars.ts life bars over opponents (projected through the camera) and the player's along the bottom
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg
@@ -75,7 +82,8 @@ src/settings.ts SettingsPanel: sections of toggles / sliders (handle-less bars w
 src/look.ts     the Look (Tab): camera projection, field of view, ground clearance, near fade, depth of field (focus
                 on the crab or by hand); distance fog (start, end, colour tint; pushed back by the orthographic
                 eye's extra distance); volumetric haze; mist banks
-src/ui.css      the HUD (black text, no shadow), crosshair and panel styles, shared by every page
+src/ui.css      the look, shared by every page: cyberpunk sci-fi (dark clipped plates, neon cyan --cy, magenta --mg for
+                warnings, mono uppercase labels); the crosshair is an SVG in index.html (spinning dashed rings, brackets)
 ```
 
 ## Deploying
@@ -94,10 +102,15 @@ the start and from `structure.onChange` as pieces come off.
 ## Combat so far
 Three opponents on the beach at a time (main.ts ENEMIES), spawned at least 14 units from the player, one
 replaced 4 s after it is cracked. Health is the shell's armour. Hits flash the crab red. The player cracked
-sits 3 s under a "Cracked!" message, then is back at the spawn, whole. Shots never hit their shooter.
+keels over (`Crab.collapse`: a roll about its forward axis in `toWorld`/`poseBody`, the body sinks, the legs splay,
+the claws drop, the lids shut; 1.3 s), bursts at 1.2 s, and is back at the spawn after 3.5 s under a "Cracked!" message.
+Shots never hit their shooter. Solid props (rocks, boulders, driftwood: `world.obstacles`) block walking: `Player.blockers`,
+a round crab pushed out of turned boxes each frame (`unblock`), so a crab can hide behind a rock.
 
 ## Game feel decided so far
 - Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`). Space jumps.
+  Sprinting spends stamina (`Player.stamina`, 0..1: 7 s unladen × weightFactor, back in 5 s; at 0 the crab is
+  winded until a third is back); the thin bar under the life bar, magenta when winded.
   The gait steps slowly with long strides (STEP_TRIGGER, STEP_SECONDS, STEP_LEAD in crab.ts).
 - Actions: 1 is the claws, 2-5 the weapons on the shell in build order. The left button fires the chosen
   action (claws take turns: `Crab.snapNext`); the right button aims down the barrel (`camera.aimZoom`:

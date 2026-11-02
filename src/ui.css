@@ -1,102 +1,140 @@
-/* Battle Crab's HUD and panels: shared by the game and the map maker. */
+/* Battle Crab's HUD and panels: shared by the game, the battle shell, the map maker and the model viewer.
+   The look: cyberpunk sci-fi. Dark glass plates with clipped corners and a hairline of neon cyan, magenta for
+   warnings, uppercase spaced labels, a soft glow on what matters. --cy is the cyan, --mg the magenta. */
 
-html, body { margin: 0; height: 100%; background: #0e1218; overflow: hidden; }
+:root {
+  --cy: #4ff2ff;
+  --cy-dim: rgba(79, 242, 255, 0.45);
+  --cy-faint: rgba(79, 242, 255, 0.14);
+  --mg: #ff3fb4;
+  --plate: rgba(6, 12, 22, 0.78);
+  --plate-solid: #0a1220;
+  --ink: #d8f4fa;
+  --ink-dim: #7fa6b4;
+  --mono: 'Cascadia Code', 'JetBrains Mono', Consolas, ui-monospace, monospace;
+  --sans: 'Segoe UI', system-ui, sans-serif;
+  --clip: polygon(8px 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%, 0 8px);
+}
+
+html, body { margin: 0; height: 100%; background: #060a12; overflow: hidden; }
 canvas { display: block; width: 100%; height: 100%; }
 
-#hud { position: fixed; left: 12px; top: 10px; color: #111; font: 12px/1.5 system-ui, sans-serif; pointer-events: none; }
-#hud a { color: inherit; pointer-events: auto; }
+/* The title line: a plate top left, the links in cyan. */
+#hud { position: fixed; left: 12px; top: 10px; max-width: min(760px, calc(100% - 320px)); padding: 5px 12px 5px 10px; color: var(--ink-dim); font: 11px/1.5 var(--mono); letter-spacing: 0.04em; text-transform: uppercase;
+  background: var(--plate); border-left: 2px solid var(--cy); clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%); pointer-events: none; }
+#hud a { color: var(--cy); text-decoration: none; pointer-events: auto; }
+#hud a:hover { text-shadow: 0 0 8px var(--cy); }
+#hud #hint { color: var(--ink); }
 
-/* The crosshair: a thin cross with a gap at the centre, dark with a light edge so it reads on sand and sky. */
+/* The crosshair: a dashed ring turning slowly, a counter-turning outer ring, four corner brackets, four ticks and a dot, all neon cyan. */
 #crosshair { position: fixed; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none; }
-#crosshair::before, #crosshair::after { content: ''; position: absolute; background: #111; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.55); }
-#crosshair::before { left: -9px; top: -0.5px; width: 18px; height: 1px; clip-path: polygon(0 0, 33% 0, 33% 100%, 0 100%, 67% 0, 100% 0, 100% 100%, 67% 100%); }
-#crosshair::after { left: -0.5px; top: -9px; width: 1px; height: 18px; clip-path: polygon(0 0, 100% 0, 100% 33%, 0 33%, 0 67%, 100% 67%, 100% 100%, 0 100%); }
+#crosshair svg { position: absolute; left: -60px; top: -60px; overflow: visible; filter: drop-shadow(0 0 3px rgba(79, 242, 255, 0.9)) drop-shadow(0 0 1px #000); }
+#crosshair svg * { stroke: var(--cy); stroke-width: 1.4; stroke-linecap: square; }
+#crosshair .ring { animation: ch-spin 9s linear infinite; opacity: 0.85; }
+#crosshair .ring2 { animation: ch-spin 14s linear infinite reverse; opacity: 0.5; stroke-width: 1; }
+#crosshair .brackets path { stroke-width: 1.8; }
+#crosshair .ticks path { stroke-width: 1.2; }
+#crosshair .dot { fill: #fff; stroke: none; }
+@keyframes ch-spin { to { transform: rotate(360deg); } }
 
 /* The settings panel. */
 .settings { position: fixed; right: 12px; top: 10px; width: 272px; max-height: calc(100% - 20px); overflow-y: auto; padding: 10px 12px 12px; box-sizing: border-box;
-  background: rgba(10, 14, 20, 0.86); color: #dde5ee; font: 12px/1.4 system-ui, sans-serif; border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 6px; backdrop-filter: blur(4px); }
+  background: var(--plate); color: var(--ink); font: 12px/1.4 var(--sans); border: 1px solid var(--cy-faint); border-top: 2px solid var(--cy); clip-path: var(--clip); backdrop-filter: blur(6px); }
 .settings.left { right: auto; left: 12px; top: 40px; }
-.settings h2 { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: #fff; }
-.settings h3 { margin: 10px 0 4px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: #8fa3b8; }
+.settings h2 { margin: 0 0 6px; font: 600 12px/1.3 var(--mono); letter-spacing: 0.12em; text-transform: uppercase; color: var(--cy); }
+.settings h3 { margin: 10px 0 4px; font: 600 10px/1.3 var(--mono); text-transform: uppercase; letter-spacing: 0.14em; color: var(--ink-dim); }
+.settings h3::before { content: '// '; color: var(--cy-dim); }
 .settings label { display: grid; grid-template-columns: 96px 1fr 50px; align-items: center; gap: 6px; margin: 3px 0; }
-.settings label > span:first-child { color: #c3cdd8; }
-.settings input[type=checkbox] { justify-self: start; margin: 0; }
-.settings select { font: inherit; background: #1b232e; color: #eee; border: 1px solid #3a4756; border-radius: 3px; padding: 1px 2px; grid-column: 2 / 4; }
-.settings input[type=color] { grid-column: 2 / 4; width: 100%; height: 18px; padding: 0; border: 1px solid #3a4756; border-radius: 3px; background: none; }
+.settings label > span:first-child { color: #b9d6de; }
+.settings input[type=checkbox] { justify-self: start; margin: 0; accent-color: var(--cy); }
+.settings select { font: inherit; background: #0f1a2a; color: var(--ink); border: 1px solid rgba(79, 242, 255, 0.3); border-radius: 0; padding: 1px 2px; grid-column: 2 / 4; }
+.settings input[type=color] { grid-column: 2 / 4; width: 100%; height: 18px; padding: 0; border: 1px solid rgba(79, 242, 255, 0.3); border-radius: 0; background: none; }
 
 /* Sliders: a filled bar, no handle (the whole bar drags); --fill is the share filled. */
-.settings input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 8px; margin: 0; border-radius: 4px; outline: none; cursor: ew-resize;
-  background: linear-gradient(to right, #4f8fd9 0, #4f8fd9 var(--fill, 0%), #2a3441 var(--fill, 0%), #2a3441 100%); }
+.settings input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 8px; margin: 0; border-radius: 0; outline: none; cursor: ew-resize;
+  background: linear-gradient(to right, var(--cy) 0, var(--cy) var(--fill, 0%), #182636 var(--fill, 0%), #182636 100%); }
 .settings input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 0; height: 0; border: 0; }
 .settings input[type=range]::-moz-range-thumb { width: 0; height: 0; border: 0; background: transparent; }
 .settings input[type=range]::-moz-range-track { background: transparent; }
-.settings input[type=range]:hover { filter: brightness(1.15); }
+.settings input[type=range]:hover { filter: brightness(1.15) drop-shadow(0 0 3px var(--cy-dim)); }
 
 /* The number beside a slider: plain text until it has focus, then a field. */
-.settings input.value { -moz-appearance: textfield; appearance: textfield; width: 100%; box-sizing: border-box; font: inherit; font-variant-numeric: tabular-nums; text-align: right;
-  color: #8fa3b8; background: transparent; border: 1px solid transparent; border-radius: 3px; padding: 0 3px; cursor: text; }
+.settings input.value { -moz-appearance: textfield; appearance: textfield; width: 100%; box-sizing: border-box; font: 12px/1.4 var(--mono); font-variant-numeric: tabular-nums; text-align: right;
+  color: var(--ink-dim); background: transparent; border: 1px solid transparent; border-radius: 0; padding: 0 3px; cursor: text; }
 .settings input.value::-webkit-outer-spin-button, .settings input.value::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-.settings input.value:hover { color: #dde5ee; }
-.settings input.value:focus { outline: none; color: #fff; background: #1b232e; border-color: #4f8fd9; }
+.settings input.value:hover { color: var(--ink); }
+.settings input.value:focus { outline: none; color: #fff; background: #0f1a2a; border-color: var(--cy); }
 
 .settings .buttons { display: flex; flex-wrap: wrap; gap: 4px; margin: 6px 0 2px; }
-.settings button { font: inherit; padding: 3px 8px; background: #263142; color: #eef; border: 1px solid #3a4756; border-radius: 3px; cursor: pointer; }
-.settings button:hover { background: #31405a; }
-.settings button.on { background: #4f8fd9; border-color: #4f8fd9; color: #fff; }
-.settings .note { margin: 4px 0; color: #8fa3b8; }
+.settings button { font: 11px/1.4 var(--mono); letter-spacing: 0.04em; padding: 3px 8px; background: #0f1a2a; color: var(--ink); border: 1px solid rgba(79, 242, 255, 0.3); border-radius: 0; cursor: pointer;
+  clip-path: polygon(5px 0, 100% 0, 100% calc(100% - 5px), calc(100% - 5px) 100%, 0 100%, 0 5px); }
+.settings button:hover { background: #16263a; border-color: var(--cy-dim); }
+.settings button.on { background: var(--cy); border-color: var(--cy); color: #041018; font-weight: 600; }
+.settings .note { margin: 4px 0; color: var(--ink-dim); }
 
 /* The map maker: a toolbar of icons down the left edge, each with a tooltip; the tool's options beside it. */
 #toolbar { position: fixed; left: 10px; top: 40px; display: flex; flex-direction: column; gap: 3px; padding: 6px; box-sizing: border-box; width: 48px;
-  background: rgba(10, 14, 20, 0.86); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; backdrop-filter: blur(4px); }
-#toolbar hr { width: 24px; margin: 3px auto; border: 0; border-top: 1px solid rgba(255, 255, 255, 0.12); }
+  background: var(--plate); border: 1px solid var(--cy-faint); border-left: 2px solid var(--cy); clip-path: var(--clip); backdrop-filter: blur(6px); }
+#toolbar hr { width: 24px; margin: 3px auto; border: 0; border-top: 1px solid var(--cy-faint); }
 #toolbar button, #toolbar a { position: relative; display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; margin: 0;
-  background: transparent; color: #aab7c6; border: 1px solid transparent; border-radius: 6px; cursor: pointer; text-decoration: none; }
-#toolbar button:hover, #toolbar a:hover { background: #263142; color: #fff; }
-#toolbar button.on { background: #4f8fd9; color: #fff; border-color: #6ea6e8; }
-#toolbar button.lit { color: #4f8fd9; }
+  background: transparent; color: var(--ink-dim); border: 1px solid transparent; border-radius: 0; cursor: pointer; text-decoration: none; }
+#toolbar button:hover, #toolbar a:hover { background: #16263a; color: var(--cy); }
+#toolbar button.on { background: var(--cy-faint); color: var(--cy); border-color: var(--cy-dim); box-shadow: inset 0 0 10px var(--cy-faint); }
+#toolbar button.lit { color: var(--cy); }
 #toolbar svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
 #toolbar [data-tip]::after { content: attr(data-tip); position: absolute; left: calc(100% + 10px); top: 50%; transform: translateY(-50%); white-space: pre; z-index: 2;
-  padding: 5px 8px; background: #111822; color: #e6edf5; font: 12px/1.35 system-ui, sans-serif; border: 1px solid rgba(255, 255, 255, 0.12); border-radius: 5px; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+  padding: 5px 8px; background: var(--plate-solid); color: var(--ink); font: 12px/1.35 var(--sans); border: 1px solid var(--cy-dim); box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
   opacity: 0; pointer-events: none; transition: opacity 0.08s; }
-#toolbar [data-tip]::before { content: ''; position: absolute; left: calc(100% + 4px); top: 50%; transform: translateY(-50%); border: 6px solid transparent; border-right-color: #111822; opacity: 0; pointer-events: none; }
+#toolbar [data-tip]::before { content: ''; position: absolute; left: calc(100% + 4px); top: 50%; transform: translateY(-50%); border: 6px solid transparent; border-right-color: var(--cy-dim); opacity: 0; pointer-events: none; }
 #toolbar [data-tip]:hover::after, #toolbar [data-tip]:hover::before { opacity: 1; }
-#toolbar [data-tip]::after b { display: block; color: #fff; }
+#toolbar [data-tip]::after b { display: block; color: var(--cy); font-family: var(--mono); letter-spacing: 0.06em; text-transform: uppercase; }
 .settings.left { right: auto; left: 66px; top: 40px; width: 224px; }
 .settings .swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 5px; margin: 4px 0; }
-.settings .swatch { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 3px; background: #1b232e; color: #c3cdd8; font: 11px/1.2 system-ui, sans-serif;
-  border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; cursor: pointer; text-align: center; }
-.settings .swatch i { display: block; height: 22px; border-radius: 3px; }
-.settings .swatch:hover { border-color: rgba(255, 255, 255, 0.3); color: #fff; }
-.settings .swatch.on { border-color: #4f8fd9; box-shadow: 0 0 0 1px #4f8fd9; color: #fff; }
-.settings .status { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.08); color: #6f8296; font-size: 11px; }
+.settings .swatch { display: flex; flex-direction: column; align-items: stretch; gap: 3px; padding: 3px; background: #0f1a2a; color: #b9d6de; font: 11px/1.2 var(--sans);
+  border: 1px solid var(--cy-faint); cursor: pointer; text-align: center; }
+.settings .swatch i { display: block; height: 22px; }
+.settings .swatch:hover { border-color: var(--cy-dim); color: #fff; }
+.settings .swatch.on { border-color: var(--cy); box-shadow: 0 0 0 1px var(--cy), 0 0 8px var(--cy-dim); color: #fff; }
+.settings .status { margin: 8px 0 0; padding-top: 6px; border-top: 1px solid var(--cy-faint); color: var(--ink-dim); font: 11px/1.4 var(--mono); }
 
-/* The action bar: the five slots along the bottom, the chosen one lit. */
-#actions { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 6px; pointer-events: none; }
-#actions .action { padding: 5px 10px; background: rgba(10, 14, 20, 0.7); color: #c3cdd8; font: 12px/1.3 system-ui, sans-serif; border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 5px; }
-#actions .action b { color: #8fa3b8; margin-right: 4px; }
-#actions .action.on { background: #4f8fd9; color: #fff; border-color: #6ea6e8; }
-#actions .action.on b { color: #e4efff; }
-#actions .action i { font-style: normal; color: #8fa3b8; margin-left: 5px; font-variant-numeric: tabular-nums; }
-#actions .action.on i { color: #d6e6ff; }
-#actions .action.empty { color: #e09a8a; }
-#notice { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); padding: 6px 14px; background: rgba(10, 14, 20, 0.7); color: #fff; font: 600 15px/1.3 system-ui, sans-serif; border-radius: 6px; pointer-events: none; }
+/* The action bar: the slots along the bottom as clipped chips, the chosen one lit cyan, an empty one magenta. */
+#actions { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 5px; pointer-events: none; }
+#actions .action { position: relative; padding: 6px 12px 6px 10px; background: var(--plate); color: #b9d6de; font: 11px/1.3 var(--mono); letter-spacing: 0.05em; text-transform: uppercase;
+  border: 1px solid var(--cy-faint); border-bottom: 2px solid var(--cy-dim); clip-path: polygon(6px 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%, 0 6px); }
+#actions .action b { color: var(--cy); margin-right: 6px; font-weight: 600; }
+#actions .action.on { background: linear-gradient(180deg, rgba(79, 242, 255, 0.28), rgba(79, 242, 255, 0.1)); color: #fff; border-color: var(--cy); border-bottom-color: var(--cy); box-shadow: 0 0 14px var(--cy-faint), inset 0 0 12px var(--cy-faint); }
+#actions .action.on b { color: #fff; text-shadow: 0 0 6px var(--cy); }
+#actions .action i { font-style: normal; color: var(--ink-dim); margin-left: 6px; font-variant-numeric: tabular-nums; }
+#actions .action.on i { color: var(--cy); }
+#actions .action.empty { color: var(--mg); border-bottom-color: var(--mg); }
+#actions .action.empty i { color: var(--mg); }
+#notice { position: fixed; left: 50%; top: 22%; transform: translateX(-50%); padding: 6px 16px; background: var(--plate); color: var(--cy); font: 600 13px/1.4 var(--mono); letter-spacing: 0.12em; text-transform: uppercase;
+  border: 1px solid var(--cy-dim); clip-path: var(--clip); text-shadow: 0 0 8px var(--cy-dim); pointer-events: none; }
 
-/* Life bars: over each opponent, and the player's along the bottom above the actions. */
+/* Life bars: over each opponent, and the player's along the bottom above the actions. The fill is cyan, segmented by a faint grid. */
 .lifebars { position: fixed; inset: 0; pointer-events: none; }
-.lifebar { position: absolute; width: 54px; height: 6px; transform: translate(-50%, -100%); background: rgba(0, 0, 0, 0.55); border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 3px; overflow: hidden; }
-.lifebar .fill { height: 100%; background: #5fcf6a; transition: width 0.12s; }
-.lifebar.own { position: fixed; left: 50%; bottom: 52px; width: 240px; height: 12px; transform: translateX(-50%); pointer-events: none; }
-.lifebar.own span { position: absolute; inset: 0; text-align: center; color: #fff; font: 10px/12px system-ui, sans-serif; text-shadow: 0 1px 2px #000; }
-#cracked { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); color: #fff; font: 700 28px/1.2 system-ui, sans-serif; text-shadow: 0 2px 8px #000; pointer-events: none; }
-#cracked small { display: block; font: 14px/1.4 system-ui, sans-serif; }
+.lifebar { position: absolute; width: 54px; height: 6px; transform: translate(-50%, -100%); background: rgba(4, 10, 18, 0.7); border: 1px solid var(--cy-dim); overflow: hidden;
+  clip-path: polygon(3px 0, 100% 0, 100% calc(100% - 3px), calc(100% - 3px) 100%, 0 100%, 0 3px); }
+.lifebar .fill { height: 100%; background: linear-gradient(90deg, #ff3fb4, #4ff2ff 45%); background-size: 240px 100%; transition: width 0.12s; box-shadow: 0 0 6px var(--cy-dim); }
+.lifebar::after { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(90deg, transparent 0 11px, rgba(4, 10, 18, 0.6) 11px 12px); pointer-events: none; }
+.stamina.own { position: fixed; left: 50%; bottom: 47px; width: 240px; height: 4px; transform: translateX(-50%); pointer-events: none; background: rgba(4, 10, 18, 0.7); border: 1px solid var(--cy-faint); overflow: hidden; transition: opacity 0.4s; }
+.stamina.own .fill { height: 100%; background: var(--cy-dim); transition: width 0.1s, background 0.3s; }
+.stamina.own.winded .fill { background: var(--mg); box-shadow: 0 0 6px var(--mg); }
+.stamina.own.full { opacity: 0.35; }
+.lifebar.own { position: fixed; left: 50%; bottom: 56px; width: 240px; height: 12px; transform: translateX(-50%); pointer-events: none; border-color: var(--cy); box-shadow: 0 0 12px var(--cy-faint); }
+.lifebar.own span { position: absolute; inset: 0; z-index: 1; text-align: center; color: #fff; font: 600 9px/12px var(--mono); letter-spacing: 0.12em; text-shadow: 0 0 4px #000, 0 1px 2px #000; }
+#cracked { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); color: var(--mg); font: 700 30px/1.2 var(--mono); letter-spacing: 0.2em; text-transform: uppercase; text-align: center;
+  text-shadow: 0 0 14px rgba(255, 63, 180, 0.8), 0 2px 8px #000; pointer-events: none; animation: cracked-flicker 1.6s steps(2) infinite; }
+#cracked small { display: block; margin-top: 4px; font: 12px/1.4 var(--mono); letter-spacing: 0.1em; color: var(--ink); text-shadow: 0 1px 4px #000; }
+@keyframes cracked-flicker { 0%, 100% { opacity: 1; } 50% { opacity: 0.82; } }
 
 /* The build screen's shell cards. */
 .settings .cards { display: flex; flex-direction: column; gap: 4px; margin: 4px 0; }
-.settings .cards button { text-align: left; white-space: normal; line-height: 1.3; padding: 5px 8px; }
-.settings .cards .muted { color: #8fa3b8; }
-.settings .cards .good { color: #8fd98f; }
-.settings .cards .bad { color: #e09a8a; }
-.settings .cards button.on .muted, .settings .cards button.on .good, .settings .cards button.on .bad { color: #eef; }
+.settings .cards button { text-align: left; white-space: normal; line-height: 1.3; padding: 5px 8px; font: 12px/1.3 var(--sans); }
+.settings .cards .muted { color: var(--ink-dim); }
+.settings .cards .good { color: #7fe8a0; }
+.settings .cards .bad { color: var(--mg); }
+.settings .cards button.on .muted, .settings .cards button.on .good, .settings .cards button.on .bad { color: #041018; }
 
 /* The model viewer's file list. */
 .settings .list { display: flex; flex-direction: column; gap: 3px; margin: 4px 0; max-height: 40vh; overflow-y: auto; }
