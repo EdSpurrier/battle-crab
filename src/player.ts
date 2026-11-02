@@ -31,6 +31,11 @@ export class Player {
     return this.air > 0 || this.vy > 0;
   }
 
+  /** Snap the left (+1) or right (-1) pincer. */
+  snap(side: 1 | -1): void {
+    this.crab.snap(side);
+  }
+
   constructor(renderer: Renderer, private readonly ground: Ground, start: Vec3) {
     this.position = [start[0], ground.heightAt(start[0], start[2]), start[2]];
     this.crab = new Crab(renderer, (x, z) => ground.heightAt(x, z), this.position, this.yaw);
