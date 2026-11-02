@@ -36,7 +36,7 @@ src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down 
                 beach-wide layer), start; the tool's options beside the toolbar (rebuilt per tool); the chosen
                 bank's controls on the right; saves as you go; Download / Load / New in the toolbar
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
-src/controls.ts the two control schemes (settings or C): third person (mouse orbits, pointer lock) and top down
+src/controls.ts the two control schemes (settings or C): "3rd person" (mouse orbits, pointer lock) and "topdown"
                 (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;
                 Q/E turn); the third-person camera's settings are kept while in top down
 src/pick.ts     pickGround: the ground point under a screen position (ray march + bisection on the heightfield)
@@ -62,6 +62,7 @@ The build runs locally, so the private engine needs no token in CI.
 them automatically. Keep the folder flat; a file dropped in shows on the next dev reload or build.
 
 ## Game feel decided so far
+- Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`).
 - The mouse orbits the camera with no button held (pointer lock on any click, Esc releases). A
   standing crab does not turn with the camera (you can look at its face). While any key is held the
   crab turns, eased, to face the camera's way and moves relative to it: W/S forward and back along
@@ -71,7 +72,9 @@ them automatically. Keep the folder flat; a file dropped in shows on the next de
   panel); opening it only gives the cursor back. Camera rig settings (`lift`, `height`, `aim`, `shoulder`,
   `distance`, `stiffness`): lift raises eye and look-at point together so the camera still faces forward.
 - The camera never goes under the ground: `ThirdPersonCamera.clearance` (a setting) is how high the eye
-  stays; the tilt shown is raised from the one asked for when needed. Things close to the eye fade
+  stays; the tilt shown is raised from the one asked for when needed. The eye checked is the virtual
+  one at the zoom distance (the orthographic eye is 200 back and its height means nothing); in
+  orthographic the ray behind it is checked too, so parallel rays do not pass through a rise behind. Things close to the eye fade
   (`renderer.nearFade`, a setting); the ground's materials have `nearFade: false` so only what stands on it does.
 - Pointer lock is asked for on mousedown and again on click of the same gesture, so the first press
   that gives the window focus is enough in a real browser (the embedded pane refuses it altogether).

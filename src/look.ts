@@ -26,7 +26,7 @@ export function installLook(parent: HTMLElement, renderer: Renderer, camera: Thi
   panel
     .section('Controls')
     .choice('controls.mode', 'Scheme', CONTROL_MODES, () => controls.mode, (v) => controls.setMode(v as ControlMode));
-  panel.note('C switches too. Third person: mouse orbits, WASD walks along the look. Top down: WASD moves on the view, the mouse aims a marker on the ground, Q/E turn the view.');
+  panel.note('C switches too. 3rd person: mouse orbits, WASD walks along the look. Topdown: WASD moves on the view, the mouse aims a marker on the ground, Q/E turn the view.');
 
   // ---------- distance fog: measured from the eye, so in orthographic (the eye pulled far back) it is pushed back as far.
   let fogOn = true;

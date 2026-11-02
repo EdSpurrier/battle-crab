@@ -88,15 +88,15 @@ window.addEventListener('blur', () => keys.clear());
 // on the click of the same gesture, so the press that gives the window focus is enough. Where locking
 // is refused (some embedded browsers) the bare mouse movement still orbits. Top down keeps the cursor.
 const locked = () => document.pointerLockElement === canvas;
-const THIRD = 'mouse to look · WASD to walk · wheel to zoom · Tab for settings · C for top down';
-const TOP = 'mouse to aim · WASD to move · Q/E turn the view · wheel to zoom · Tab for settings · C for third person';
+const THIRD = 'mouse to look · WASD to walk · Shift to run · wheel to zoom · Tab for settings · C for topdown';
+const TOP = 'mouse to aim · WASD to move · Shift to run · Q/E turn the view · wheel to zoom · Tab for settings · C for 3rd person';
 function showHint(): void {
   if (controls.topDown) hint.textContent = TOP;
   else hint.textContent = `${THIRD} · ${locked() ? 'Esc to release the mouse' : 'click to capture the mouse'}`;
 }
 controls.onModeChange = (mode) => {
-  crosshair.hidden = mode === 'top down';
-  if (mode === 'top down' && locked()) document.exitPointerLock();
+  crosshair.hidden = mode === 'topdown';
+  if (mode === 'topdown' && locked()) document.exitPointerLock();
   showHint();
 };
 // The settings may have put a scheme in place already (a saved choice): show it.
@@ -131,7 +131,7 @@ function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
   const intent = controls.update(keys, player.position);
-  player.update(dt, intent.dir, intent.faceYaw, intent.faceAlways);
+  player.update(dt, intent.dir, intent.faceYaw, intent.faceAlways, intent.run);
   camera.update(dt);
   look.update();
   renderer.time = now / 1000;

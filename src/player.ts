@@ -13,7 +13,9 @@ export class Player {
   position: Vec3;
   /** Which way the crab faces (radians about +y): turns to the camera's yaw while moving, stays put otherwise. */
   yaw = 0;
-  speed = 3.2;
+  /** Walking speed (world units a second), and how many times that when running (Shift). */
+  speed = 4.8;
+  runFactor = 1.75;
   /** How fast it turns to face a new direction (per second; higher is snappier). */
   turnRate = 9;
   readonly velocity: Vec3 = [0, 0, 0];
@@ -29,7 +31,7 @@ export class Player {
    * turning to face `faceYaw`. Standing still, the facing is left alone unless `faceAlways` (the
    * top-down scheme: the crab follows the aim whether or not it walks).
    */
-  update(dt: number, dir: Vec3, faceYaw: number, faceAlways = false): void {
+  update(dt: number, dir: Vec3, faceYaw: number, faceAlways = false, run = false): void {
     const len = Math.hypot(dir[0], dir[2]);
     const x0 = this.position[0];
     const z0 = this.position[2];
@@ -41,7 +43,7 @@ export class Player {
     if (len > 1e-4) {
       const nx = dir[0] / len;
       const nz = dir[2] / len;
-      const step = this.speed * Math.min(1, len) * dt;
+      const step = this.speed * (run ? this.runFactor : 1) * Math.min(1, len) * dt;
       const margin = 1.5;
       this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, x0 + nx * step));
       this.position[2] = Math.min(this.ground.size - margin, Math.max(margin, z0 + nz * step));
