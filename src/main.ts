@@ -3,12 +3,12 @@ import { ThirdPersonCamera } from './camera';
 import { crabBox } from './combat';
 import { Controls } from './controls';
 import { Enemy } from './enemy';
-import { ENEMY_KINDS } from './enemyKinds';
 import { GamepadInput } from './gamepad';
 import { buildGround } from './ground';
 import { World, wreckFx } from './impacts';
 import { LifeBars } from './lifebars';
 import { Hell, hellBuild } from './hell';
+import { Waves } from './waves';
 import { installLook } from './look';
 import { Loot } from './loot';
 import { loadMap } from './map';
@@ -59,8 +59,12 @@ weigh();
 const world = new World((x, z) => ground.heightAt(x, z));
 // The beach's rocks, shells and driftwood (the map's props); the solid ones stop shots.
 const props = new Props(renderer, (x, z) => ground.heightAt(x, z), map.props);
-world.obstacles.push(...props.obstacles());
+// Shells and driftwood break under fire (into debris that blocks nothing); rocks and boulders stand.
+props.attach(world, loot);
 player.blockers = world.obstacles;
+structure.owner = player;
+// A burst flings the loot lying about.
+world.blasts.push((at, r, s) => loot.blast(at, r, s));
 const arsenal = new Arsenal(renderer, structure, world, player, 1, HELL);
 structure.invulnerable = HELL;
 // Bullet Hell: a quicker crab, and every gun fires dead level.
@@ -69,10 +73,9 @@ player.speedScale = HELL ? 1.25 : 1;
 camera.follow = player.position;
 camera.target = [player.position[0], player.position[1] + camera.height, player.position[2]];
 
-// ---------- opponents: three on the beach at a time, each with its own shell and build; a cracked one is replaced
+// ---------- opponents, in waves (waves.ts): every few cracks a stage, each stage more of them, new kinds, tougher
 
-const ENEMIES = 3;
-const RESPAWN = HELL ? 2.5 : 4;
+const waves = new Waves(HELL ? 'hell' : 'battle');
 const enemies: Enemy[] = [];
 let respawnIn = 0;
 function spawnPoint(): Vec3 {
@@ -83,7 +86,7 @@ function spawnPoint(): Vec3 {
   }
   return [4, 0, 4];
 }
-for (let i = 0; i < ENEMIES; i++) enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot, HELL ? { kind: ENEMY_KINDS.marcher } : {}));
+for (let i = 0; i < 3; i++) enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot, { kind: waves.firstKind() }));
 const lifeBars = new LifeBars(document.body);
 const cracked = document.createElement('div');
 cracked.id = 'cracked';
@@ -91,6 +94,9 @@ cracked.hidden = true;
 document.body.appendChild(cracked);
 let deadFor = 0;
 let kills = 0;
+/** The cracked crabs already counted (a corpse lies on after its kill is scored), and how many corpses may lie about. */
+const counted = new Set<Enemy>();
+const MAX_CORPSES = 6;
 
 // ---------- pickups: ammo crates, health boxes, starfish (a spell of invincibility)
 
@@ -147,7 +153,6 @@ function showActions(): void {
         return el;
       }),
     );
-    showGauge();
     return;
   }
   const list = actions();
@@ -176,18 +181,16 @@ const hell = HELL ? new Hell(arsenal, structure) : null;
 // The wave gauge down the right side: the stage, how far through it, how hot it is getting.
 const gauge = document.createElement('div');
 gauge.id = 'hellgauge';
-gauge.hidden = !HELL;
 gauge.innerHTML = '<b></b><div class="bar"><i></i></div><span></span>';
 document.body.appendChild(gauge);
 const gaugeStage = gauge.querySelector('b') as HTMLElement;
 const gaugeFill = gauge.querySelector('i') as HTMLElement;
 const gaugeNote = gauge.querySelector('span') as HTMLElement;
 function showGauge(): void {
-  if (!hell) return;
-  gaugeStage.textContent = `Stage ${hell.stage}`;
-  gaugeFill.style.height = `${Math.round(hell.stageShare * 100)}%`;
-  gauge.style.setProperty('--heat', String(hell.heat()));
-  gaugeNote.textContent = `${enemies.filter((e) => e.alive).length} / ${hell.wantEnemies()} crabs · ${hell.kills} cracked`;
+  gaugeStage.textContent = `Stage ${waves.stage}`;
+  gaugeFill.style.height = `${Math.round(waves.stageShare * 100)}%`;
+  gauge.style.setProperty('--heat', String(waves.heat()));
+  gaugeNote.textContent = `${enemies.filter((e) => e.alive).length} / ${waves.wantEnemies()} crabs · ${waves.kills} cracked`;
 }
 setAction(0);
 let pieceCount = structure.alivePieces.length;
@@ -348,9 +351,10 @@ let fpsAt = last;
 function frame(now: number): void {
   const dt = Math.min(0.1, (now - last) / 1000);
   last = now;
-  // The crabs' boxes and their pieces' for this frame's shots.
+  // The crabs' boxes and their pieces' for this frame's shots; the corpses' too (shots push them about).
   const live = enemies.filter((e) => e.alive);
-  world.moving = [crabBox(player), ...structure.boxes(player.crab.body, player), ...live.map(crabBox), ...live.flatMap((e) => e.structure.boxes(e.crab.body, e))];
+  const corpses = enemies.filter((e) => e.corpse);
+  world.moving = [crabBox(player), ...structure.boxes(player.crab.body, player), ...live.map(crabBox), ...live.flatMap((e) => e.structure.boxes(e.crab.body, e)), ...corpses.map(crabBox)];
   const intent = controls.update(keys, player.position);
   nipCool = Math.max(0, nipCool - dt);
   // A gamepad joins in over the keys and the mouse: the left stick walks (in the camera's frame), the right
@@ -390,7 +394,9 @@ function frame(now: number): void {
     if (deadFor === 0) {
       arsenal.releaseAll();
       cracked.hidden = false;
-      if (hell) say(hell.reset());
+      // The run is over: the waves back to stage one (and Bullet Hell's guns back to plain).
+      const run = waves.reset();
+      say(hell ? `${run}, ${hell.reset()}` : run);
     }
     player.update(dt, [0, 0, 0], player.yaw, false);
     const was = deadFor;
@@ -447,33 +453,53 @@ function frame(now: number): void {
     noticeFor -= dt;
     if (noticeFor <= 0) notice.hidden = true;
   }
-  if (frames % 15 === 0) showActions();
+  if (frames % 15 === 0) {
+    showActions();
+    showGauge();
+  }
   // The opponents fight the player (none of them while the player is down); a cracked one is replaced after a while.
   for (const e of enemies) e.update(dt, player.alive ? player : null);
-  for (let i = enemies.length - 1; i >= 0; i--) {
-    if (enemies[i].gone) {
-      const at = enemies[i].position;
-      enemies.splice(i, 1);
-      kills++;
-      respawnIn = RESPAWN;
-      // Bullet Hell: now and then a cracked crab leaves a power-up where it fell; every few, a new stage.
-      if (hell) {
-        const r = hell.onKill();
-        if (r.drop) pickups.place('power', [at[0], at[1], at[2]]);
-        if (r.news) say(r.news);
-      }
+  // A crab walking into a corpse shoves it along (a push each frame while they overlap: a nudge, not a blow).
+  for (const c of corpses) {
+    const cs = c.crab.scale;
+    for (const w of [player, ...live]) {
+      const wp = w.position;
+      const v = w instanceof Enemy ? w.player.velocity : w.velocity;
+      const speed = Math.hypot(v[0], v[2]);
+      if (speed < 0.5 || Math.hypot(wp[0] - c.position[0], wp[2] - c.position[2]) > 1.1 * cs + 0.9) continue;
+      c.shove([v[0] * dt * 4, 0, v[2] * dt * 4]);
     }
   }
+  for (let i = enemies.length - 1; i >= 0; i--) {
+    const e = enemies[i];
+    if (!e.alive && !counted.has(e)) {
+      // A kill the moment it cracks (the corpse lies on a while).
+      counted.add(e);
+      const at = e.position;
+      kills++;
+      // Every few, a new stage; Bullet Hell: now and then a cracked crab leaves a power-up where it fell.
+      respawnIn = Math.max(respawnIn, waves.respawnSeconds());
+      const news = waves.onKill();
+      if (news) say(news);
+      if (hell && hell.onKill()) pickups.place('power', [at[0], at[1], at[2]]);
+    }
+    if (e.gone) {
+      counted.delete(e);
+      enemies.splice(i, 1);
+    }
+  }
+  // Too many corpses about: the oldest sink early.
+  if (corpses.length > MAX_CORPSES) corpses[0].sinkNow();
   // The lights of the fight: muzzle flashes, flame, rockets and their pops, burning pieces.
   renderer.lights.lights.length = 0;
   renderer.lights.lights.push(...arsenal.lights(dt), ...structure.lights(), ...enemies.flatMap((e) => e.lights(dt)), ...loot.lights(), ...pickups.lights());
   if (renderer.lights.lights.length > 48) renderer.lights.lights.length = 48;
-  if (enemies.length < (hell ? hell.wantEnemies() : ENEMIES)) {
+  if (live.length < waves.wantEnemies()) {
     respawnIn -= dt;
     if (respawnIn <= 0) {
-      // Bullet Hell sends the stage's kinds (marchers in groups, a boss every fifth stage), tougher as it goes.
-      enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot, hell ? { kind: hell.nextKind(), armorScale: hell.armorScale() } : {}));
-      respawnIn = hell ? hell.respawnSeconds() : RESPAWN;
+      // The stage's kinds (marchers in groups, a boss every fifth stage), tougher as it goes.
+      enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot, { kind: waves.nextKind(), armorScale: waves.armorScale() }));
+      respawnIn = waves.respawnSeconds();
     }
   }
   lifeBars.update(camera, canvas, player, enemies, player.stamina, player.winded);
@@ -492,4 +518,4 @@ function frame(now: number): void {
 }
 requestAnimationFrame(frame);
 // A handle on the game for the browser console (poking at the player, the enemies, the lights).
-(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera, loot, hell, pickups };
+(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera, loot, hell, waves, pickups, props };

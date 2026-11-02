@@ -49,6 +49,24 @@ export class Loot {
     }
   }
 
+  /** A burst at `at`: everything lying within `radius` is flung outward and up, the harder the nearer. */
+  blast(at: Vec3, radius: number, strength: number): void {
+    for (const it of this.items) {
+      const dx = it.pos[0] - at[0];
+      const dz = it.pos[2] - at[2];
+      const d = Math.hypot(dx, it.pos[1] - at[1], dz);
+      if (d >= radius) continue;
+      const k = (1 - d / radius) * strength;
+      const flat = Math.hypot(dx, dz) || 1;
+      it.vel[0] += (dx / flat) * k;
+      it.vel[1] += 0.6 * k;
+      it.vel[2] += (dz / flat) * k;
+      it.rest = -1;
+      it.upright = 0;
+      it.spin += (Math.random() - 0.5) * 2;
+    }
+  }
+
   /** How many weapons lie about. */
   get lying(): number {
     return this.items.filter((i) => i.kind).length;

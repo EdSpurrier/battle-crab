@@ -90,6 +90,9 @@ const CLAW_CLEAR = 0.3;
 const COLLAPSE_SECONDS = 1.3;
 const COLLAPSE_ROLL = 1.25;
 const COLLAPSE_REST = 0.22;
+/** A knocked corpse rocks back to lying: the spring's stiffness and damping (per second). */
+const TUMBLE_SPRING = 14;
+const TUMBLE_DAMP = 3.2;
 
 // ---------- small vector helpers (the engine's math gives normalize / cross / dot / sub)
 
@@ -99,19 +102,30 @@ const length = (a: Vec3): number => Math.hypot(a[0], a[1], a[2]);
 const distance = (a: Vec3, b: Vec3): number => Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]);
 const mix = (a: Vec3, b: Vec3, t: number): Vec3 => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 
-/** A body-space point in the world: rolled about the body's forward axis (a collapse), turned by its yaw about +y, then moved to its centre. */
-function toWorld(p: Vec3, centre: Vec3, yaw: number, roll = 0): Vec3 {
+/**
+ * A body-space point in the world: rolled about the body's forward axis and pitched about its side
+ * axis (a collapse, a corpse knocked about), turned by its yaw about +y, then moved to its centre.
+ */
+function toWorld(p: Vec3, centre: Vec3, yaw: number, roll = 0, pitch = 0): Vec3 {
   let x = p[0];
   let y = p[1];
+  let z = p[2];
   if (roll) {
     const cr = Math.cos(roll);
     const sr = Math.sin(roll);
     x = p[0] * cr - p[1] * sr;
     y = p[0] * sr + p[1] * cr;
   }
+  if (pitch) {
+    const cp = Math.cos(pitch);
+    const sp = Math.sin(pitch);
+    const y1 = y * cp - z * sp;
+    z = y * sp + z * cp;
+    y = y1;
+  }
   const s = Math.sin(yaw);
   const c = Math.cos(yaw);
-  return [centre[0] + x * c + p[2] * s, centre[1] + y, centre[2] - x * s + p[2] * c];
+  return [centre[0] + x * c + z * s, centre[1] + y, centre[2] - x * s + z * c];
 }
 
 /** A body-space direction in the world (turned, not moved). */
@@ -225,16 +239,16 @@ function poseLid(out: Mat4, centre: Vec3, yaw: number, blink: number): void {
   out[12] = centre[0]; out[13] = centre[1]; out[14] = centre[2]; out[15] = 1;
 }
 
-/** `out` becomes a body-space placement (rolled about forward, turned by yaw, moved to the centre) for a mesh built in body space. */
-function poseBody(out: Mat4, centre: Vec3, yaw: number, roll = 0): void {
-  const s = Math.sin(yaw);
-  const c = Math.cos(yaw);
-  const cr = Math.cos(roll);
-  const sr = Math.sin(roll);
-  // Columns: body x = (cr, sr, 0) and body y = (-sr, cr, 0) rolled, then turned by yaw: (x, y, z) -> (x c + z s, y, -x s + z c).
-  out[0] = cr * c; out[1] = sr; out[2] = -cr * s; out[3] = 0;
-  out[4] = -sr * c; out[5] = cr; out[6] = sr * s; out[7] = 0;
-  out[8] = s; out[9] = 0; out[10] = c; out[11] = 0;
+/** `out` becomes a body-space placement (rolled about forward, pitched about side, turned by yaw, moved to the centre) for a mesh built in body space. */
+function poseBody(out: Mat4, centre: Vec3, yaw: number, roll = 0, pitch = 0): void {
+  // The columns are the body's axes in the world.
+  const o: Vec3 = [0, 0, 0];
+  const bx = toWorld([1, 0, 0], o, yaw, roll, pitch);
+  const by = toWorld([0, 1, 0], o, yaw, roll, pitch);
+  const bz = toWorld([0, 0, 1], o, yaw, roll, pitch);
+  out[0] = bx[0]; out[1] = bx[1]; out[2] = bx[2]; out[3] = 0;
+  out[4] = by[0]; out[5] = by[1]; out[6] = by[2]; out[7] = 0;
+  out[8] = bz[0]; out[9] = bz[1]; out[10] = bz[2]; out[11] = 0;
   out[12] = centre[0]; out[13] = centre[1]; out[14] = centre[2]; out[15] = 1;
 }
 
@@ -544,8 +558,18 @@ export class Crab {
       this.collapsing = Math.min(1, this.collapsing + dt / COLLAPSE_SECONDS);
       const t = this.collapsing;
       const e = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
-      this.roll = COLLAPSE_ROLL * e;
-      this.centre[1] = base + COLLAPSE_REST + (HEIGHT - COLLAPSE_REST) * (1 - e);
+      // Knocked about, the corpse rocks and tumbles: a spring brings the roll back to lying on its side (or
+      // right over, onto its side again, after a hard enough blow) and the pitch back to level.
+      const home = Math.round(this.tumbleRoll / (Math.PI * 2)) * Math.PI * 2;
+      this.rollVel += (-(this.tumbleRoll - home) * TUMBLE_SPRING - this.rollVel * TUMBLE_DAMP) * dt;
+      this.pitchVel += (-this.tumblePitch * TUMBLE_SPRING - this.pitchVel * TUMBLE_DAMP) * dt;
+      this.tumbleRoll += this.rollVel * dt;
+      this.tumblePitch += this.pitchVel * dt;
+      this.roll = COLLAPSE_ROLL * e + this.tumbleRoll;
+      this.pitch = this.tumblePitch;
+      // Turned over, the body rides higher so the shell is not in the sand.
+      const over = Math.min(1, Math.abs(Math.sin(this.tumbleRoll / 2)) + Math.abs(Math.sin(this.tumblePitch)) * 0.7);
+      this.centre[1] = at[1] + COLLAPSE_REST + (HEIGHT - COLLAPSE_REST) * (1 - e) + over * 0.45 * e;
       const k = 1 - Math.exp(-3 * dt);
       for (const leg of this.legs) {
         leg.t = -1;
@@ -651,6 +675,12 @@ export class Crab {
   /** Cracked: keel over and lie still (COLLAPSE_SECONDS); `revive` stands it up again. */
   private collapsing = -1;
   private roll = 0;
+  private pitch = 0;
+  /** A corpse knocked about: extra roll and pitch, and their rates. */
+  private tumbleRoll = 0;
+  private tumblePitch = 0;
+  private rollVel = 0;
+  private pitchVel = 0;
 
   collapse(): void {
     if (this.collapsing < 0) this.collapsing = 0;
@@ -660,9 +690,18 @@ export class Crab {
     return this.collapsing >= 1;
   }
 
+  /** A blow to the corpse: `side` across it (its left positive) rolls it, `fore` along it pitches it (units a second). */
+  jolt(side: number, fore: number): void {
+    if (this.collapsing < 0) return;
+    this.rollVel += side * 1.1;
+    this.pitchVel += fore * 0.6;
+  }
+
   revive(): void {
     this.collapsing = -1;
     this.roll = 0;
+    this.pitch = 0;
+    this.tumbleRoll = this.tumblePitch = this.rollVel = this.pitchVel = 0;
   }
 
   /** Snap a pincer: the crab's left (+1) or right (-1) claw thrusts forward and closes. Ignored mid-snap. */
@@ -790,8 +829,9 @@ export class Crab {
 
   private pose(yaw: number, speed: number): void {
     const roll = this.roll;
+    const pitch = this.pitch;
     const down = Math.max(0, this.collapsing);
-    poseBody(this.bodyModel, this.centre, yaw, roll);
+    poseBody(this.bodyModel, this.centre, yaw, roll, pitch);
     if (this.scale === 1) this.structure?.pose(this.bodyModel);
     const forward = toWorldDir([0, 0, 1], yaw);
     const sweep = down > 0 ? BLINK_SWEEP * Math.min(1, down * 1.5) : this.blink >= 0 ? BLINK_SWEEP * Math.sin(this.blink * Math.PI) : 0;
@@ -799,24 +839,24 @@ export class Crab {
       // The pupil sits on the eyeball's surface, forward of centre, slid by its offset; the lid turns about the centre to blink.
       const dirLocal = normalize([eye.ox, eye.oy, 1]);
       const dir = toWorldDir(dirLocal, yaw);
-      const on = toWorld(eye.centre, this.centre, yaw, roll);
+      const on = toWorld(eye.centre, this.centre, yaw, roll, pitch);
       const at = add(on, scale(dir, EYE_RADIUS - 0.012));
       poseAlong(eye.pupil.model, at, add(at, dir), [0, 1, 0]);
       poseLid(eye.lid.model, on, yaw, sweep);
     }
     for (const leg of this.legs) {
-      const hip = toWorld(leg.hip, this.centre, yaw, roll);
+      const hip = toWorld(leg.hip, this.centre, yaw, roll, pitch);
       const { joint, end } = twoBone(hip, leg.foot, leg.l1, leg.l2, toWorldDir(leg.pole, yaw));
       poseAlong(leg.upper.model, hip, joint, forward);
       poseAlong(leg.lower.model, joint, end, forward);
     }
     for (const claw of this.claws) {
-      const shoulder = toWorld(claw.shoulder, this.centre, yaw, roll);
+      const shoulder = toWorld(claw.shoulder, this.centre, yaw, roll, pitch);
       const sway = Math.sin(this.phase * 2 + claw.side) * (0.02 + Math.min(0.06, speed * 0.02));
       // A nip: the claw reaches out and a little up and in, jaw gaping, then chomps and comes back. Collapsed, the claws drop.
       const { reach, open } = claw.snap >= 0 ? nip(claw.snap) : { reach: 0, open: JAW_OPEN };
       const rest: Vec3 = [claw.rest[0] - claw.side * reach * 0.15, claw.rest[1] + sway + reach * 0.1 - down * 0.45, claw.rest[2] + sway * 0.5 + reach * SNAP_REACH + down * 0.35];
-      const target = toWorld(rest, this.centre, yaw, roll);
+      const target = toWorld(rest, this.centre, yaw, roll, pitch);
       // Held clear of the ground: under the wrist and under the pincer's tip ahead of it (a mound in front).
       const floor = Math.max(this.ground(target[0], target[2]), this.ground(target[0] + forward[0] * 0.65, target[2] + forward[2] * 0.65)) + CLAW_CLEAR;
       if (target[1] < floor) target[1] = floor;

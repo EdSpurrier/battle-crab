@@ -349,6 +349,8 @@ export class Structure {
     return out;
   }
 
+  /** Whose shell this is on (the crab a blow to a piece pushes); set by the owner. */
+  owner: unknown = null;
   /** Nothing comes off this shell (the player's in Bullet Hell: the run must not lose its only gun). */
   invulnerable = false;
   /** Every gun fires dead level (Bullet Hell): no elevation toward the aim point. */

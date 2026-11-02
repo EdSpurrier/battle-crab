@@ -28,6 +28,8 @@ export interface Hit {
   surface: Surface;
   distance: number;
   owner?: unknown;
+  /** The box's `self` (the crab whose piece this is), when it has one. */
+  self?: unknown;
 }
 
 export class World {
@@ -35,6 +37,8 @@ export class World {
   readonly obstacles: Obstacle[] = [];
   /** What moves (the crabs): set afresh each frame. */
   moving: Obstacle[] = [];
+  /** Told of every burst's push (where, how far, how hard): the loot lying about, and whatever else is loose. */
+  readonly blasts: ((at: Vec3, radius: number, strength: number) => void)[] = [];
 
   constructor(private readonly groundHeight: (x: number, z: number) => number) {}
 
@@ -98,11 +102,14 @@ export class World {
   /** The moving boxes (and their owners) within `range` of a point, not `ignore`'s: a swing's reach, a burst. */
   near(at: Vec3, range: number, ignore?: unknown, flat = false): Obstacle[] {
     const out: Obstacle[] = [];
-    for (const o of this.moving) {
-      if (o.owner === undefined || o.owner === ignore || o.self === ignore) continue;
-      // Flat: a burst counts mostly in plan; a level above or below is only a little further off.
-      const d = Math.hypot(o.center[0] - at[0], (o.center[1] - at[1]) * (flat ? 0.3 : 1), o.center[2] - at[2]);
-      if (d - Math.max(o.half[0], o.half[1], o.half[2]) <= range) out.push(o);
+    // The crabs and their pieces, and the props that can be hurt (the breakable ones carry an owner).
+    for (const list of [this.moving, this.obstacles]) {
+      for (const o of list) {
+        if (o.owner === undefined || o.owner === ignore || o.self === ignore) continue;
+        // Flat: a burst counts mostly in plan; a level above or below is only a little further off.
+        const d = Math.hypot(o.center[0] - at[0], (o.center[1] - at[1]) * (flat ? 0.3 : 1), o.center[2] - at[2]);
+        if (d - Math.max(o.half[0], o.half[1], o.half[2]) <= range) out.push(o);
+      }
     }
     return out;
   }
@@ -181,7 +188,7 @@ export class World {
     const cw = Math.cos(o.yaw);
     const sw = Math.sin(o.yaw);
     const n: Vec3 = [nLocal[0] * cw + nLocal[2] * sw, nLocal[1], -nLocal[0] * sw + nLocal[2] * cw];
-    return { point: [from[0] + dir[0] * tmin, from[1] + dir[1] * tmin, from[2] + dir[2] * tmin], normal: n, surface: o.surface, distance: tmin, owner: o.owner };
+    return { point: [from[0] + dir[0] * tmin, from[1] + dir[1] * tmin, from[2] + dir[2] * tmin], normal: n, surface: o.surface, distance: tmin, owner: o.owner, self: o.self };
   }
 }
 

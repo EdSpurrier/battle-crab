@@ -1,9 +1,10 @@
 import type { Vec3 } from 'gridfall-engine';
 import type { Crab } from './crab';
 import type { Obstacle } from './impacts';
+import type { Pushable } from './physics';
 
 /** Anyone who can be hit: the player, an opponent. */
-export interface Combatant {
+export interface Combatant extends Pushable {
   readonly crab: Crab;
   readonly position: Vec3;
   health: number;
