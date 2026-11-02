@@ -47,12 +47,19 @@ src/controls.ts the two control schemes (settings or C), topdown the default: "3
 src/pick.ts     pickGround: the ground point under a screen position (ray march + bisection on the heightfield)
 src/overlayShapes.ts  bands on the ground (rings, footprints, the aim marker) as overlay data
 src/models.ts   the model viewer (models.html): every .glb in Models/ (import.meta.glob), clips, turntable, wireframe
-src/shell.ts    the Battle Shell: 5 shell types (deck grid, speed / jump / armour, looks), piece kinds (plank, joint,
-                cannon, gatling, machine gun, flamethrower, bommy knocker), a build (shell + pieces in deck cells),
-                cell geometry on the shell, localStorage (the game wears what the build screen last saved)
-src/structure.ts the build drawn on the crab: a mesh per piece in body space, weapons with a moving part (kick, spin)
-src/weapons.ts  Arsenal: the chosen weapon fires on the trigger (cannon balls with gravity, tracers, flame, a swing),
-                shots are particles and a ball mesh; nothing is hit yet
+src/shell.ts    the Battle Shell: 5 shell types (deck grid, speed / jump / armour, looks); materials (wood / metal /
+                stone: hp, weight, burns); piece kinds (plank, beam, joint; cannon, gatling, machine gun,
+                flamethrower, bommy knocker, spiky ball cannon, fireworks gun) with hp and weight; claw kinds (own,
+                tiny / medium / large / uber clampers: scale, damage, weight); a build (shell + pieces + claws);
+                cell geometry (cells may reach OVERHANG past the deck on arms), `supported` / `canPlace` (a piece
+                needs the deck's floor or a held neighbour), buildWeight / weightFactor; localStorage
+src/structure.ts the build drawn on the crab and kept: hp per piece (damage; at 0 it drops as tumbling debris and
+                whatever it held up falls too; onChange), fire on wood (ignite: damage over time, spreads), per-piece
+                hit boxes (boxes: PartRef owners), turrets (aim / pose), the knocker's chain as a pendulum
+src/weapons.ts  Arsenal: ammo per weapon (AMMO; refill), the chosen weapon fires on the trigger: big cannonballs,
+                hitscan tracers, flame (ignites wood), the knocker pumped by holding (hits by ball speed), the spiky
+                ball on a chain (fire, then reel), fireworks rockets that wander and pop; hits hurt crabs and pieces
+src/pickups.ts  ammo crates (refill), health boxes (half back), starfish (8 s invincible); bob, taken by walking over
 src/buildScreen.ts the build screen (build.html): shell cards, piece palette, a lit cell under the pointer; left
                 places, right removes, R turns; weapons take action slots 2-5 in placement order (4 at most)
 src/impacts.ts  World: what shots hit (the heightfield, boulders, the crabs' boxes set each frame in `moving`) with
@@ -79,6 +86,10 @@ The build runs locally, so the private engine needs no token in CI.
 ## Assets
 `Models/*.glb` are the game's source models (the siege snail rig is the first); the model viewer lists
 them automatically. Keep the folder flat; a file dropped in shows on the next dev reload or build.
+
+## Weight
+`Player.setWeight(structure.weight() + claws)`: speed and jump scale by `weightFactor` (halved at 45). Called at
+the start and from `structure.onChange` as pieces come off.
 
 ## Combat so far
 Three opponents on the beach at a time (main.ts ENEMIES), spawned at least 14 units from the player, one
