@@ -230,7 +230,7 @@ export class Arsenal {
           if (pulled && cool <= 0 && this.spend(w, 1)) {
             this.cooldown.set(w, 1);
             w.kick = 1;
-            this.flash(muzzle, [1, 0.75, 0.35], 0.12, 8, 70);
+            this.flash(muzzle, [1, 0.75, 0.35], 0.12, 8, 40);
             this.ball(muzzle, [facing[0] * CANNON_SPEED, facing[1] * CANNON_SPEED, facing[2] * CANNON_SPEED]);
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 18, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 6, dir: facing, cone: 0.35, life: 0.2, size: 0.2, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 30, color: [0.55, 0.55, 0.55], colorTo: [0.3, 0.3, 0.3], speed: 3, dir: facing, cone: 0.5, up: 0.6, life: 1.8, size: 0.35, drag: 1.2, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
@@ -405,7 +405,7 @@ export class Arsenal {
         t.rope.reset(muzzle, muzzle);
         t.ball.hidden = false;
         w.kick = 1;
-        this.flash(muzzle, [1, 0.75, 0.35], 0.1, 6, 45);
+        this.flash(muzzle, [1, 0.75, 0.35], 0.1, 6, 30);
         this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 14, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 5, dir: facing, cone: 0.35, life: 0.18, size: 0.16, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
       } else if (t.phase === 'flying' || t.phase === 'landed') {
         t.phase = 'reeling';
@@ -508,7 +508,7 @@ export class Arsenal {
       const ground = this.world.segment(r.pos, [r.pos[0], r.pos[1] - 0.05, r.pos[2]], this.owner);
       if (r.life <= 0 || ground) {
         // Pop: a bright burst of its colours, glitter that falls, and a thump to whatever is close.
-        this.flash(r.pos, r.color, 0.3, 9, 80);
+        this.flash(r.pos, r.color, 0.3, 9, 45);
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 6, color: [1, 1, 0.9], colorTo: r.color, speed: 0.5, life: 0.12, size: 0.8, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 46, color: r.color, colorTo: r.colorTo, speed: 6, cone: Math.PI, life: 0.8, size: 0.09, gravity: 3, drag: 1.5, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark', stretch: 2 });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 24, color: r.colorTo, colorTo: [1, 1, 1], speed: 2.5, cone: Math.PI, life: 1.6, size: 0.06, gravity: 4, drag: 0.8, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark' });
