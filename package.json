@@ -1,0 +1,24 @@
+{
+  "name": "battle-crab",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Battle Crab: a third-person hermit crab that builds a weapon platform on its shell. Drawn by the Gridfall Engine.",
+  "author": "Slayd Games",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "dev:engine": "cross-env-shell ENGINE_SOURCE=1 vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "gridfall-engine": "github:EdSpurrier/gridfall-engine#v0.76.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "cross-env": "^7.0.3",
+    "typescript": "^5.6.3",
+    "vite": "^6.0.1"
+  }
+}

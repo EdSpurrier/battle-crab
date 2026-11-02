@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "battle-crab",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev"],
+      "port": 5182
+    },
+    {
+      "name": "battle-crab-engine-source",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:engine"],
+      "port": 5182
+    }
+  ]
+}
