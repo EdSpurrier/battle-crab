@@ -1,0 +1,668 @@
+{
+ "cannon.fire": {
+  "about": "the cannon going off",
+  "volume": 0.9,
+  "files": [
+   {
+    "id": "2811c564ad5d",
+    "name": "Explosion Medium Bang with Kickback",
+    "rel": "Universal Sound FX/EXPLOSIONS/Medium/EXPLOSION_Medium_Bang_with_Kickback_mono.wav",
+    "seconds": 1
+   },
+   {
+    "id": "a9a813515fa7",
+    "name": "Explosion Medium Bright Kickback",
+    "rel": "Universal Sound FX/EXPLOSIONS/Medium/EXPLOSION_Medium_Bright_Kickback_mono.wav",
+    "seconds": 1.03
+   }
+  ]
+ },
+ "cannon.land": {
+  "about": "a cannonball (or the spiky ball) slamming down",
+  "volume": 0.9,
+  "files": [
+   {
+    "id": "7779b8742490",
+    "name": "Siege Weapon Medieval Catapult Boulder Impact 01",
+    "rel": "Universal Sound FX/WEAPONS/Siege/SIEGE_WEAPON_MEDIEVAL_Catapult_Boulder_Impact_01_mono.wav",
+    "seconds": 1.78
+   },
+   {
+    "id": "6c955fc5426c",
+    "name": "Siege Weapon Medieval Catapult Boulder Impact 02",
+    "rel": "Universal Sound FX/WEAPONS/Siege/SIEGE_WEAPON_MEDIEVAL_Catapult_Boulder_Impact_02_mono.wav",
+    "seconds": 1.68
+   },
+   {
+    "id": "86600944d0fa",
+    "name": "Siege Weapon Medieval Catapult Boulder Impact 03",
+    "rel": "Universal Sound FX/WEAPONS/Siege/SIEGE_WEAPON_MEDIEVAL_Catapult_Boulder_Impact_03_mono.wav",
+    "seconds": 1.88
+   }
+  ]
+ },
+ "machinegun.fire": {
+  "about": "one machine gun round",
+  "volume": 0.35,
+  "files": [
+   {
+    "id": "9fae0df8c445",
+    "name": "Firearm RTS Machine Gun Model 01 Fire Single RR1",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Fire_Real_Time_Strategy_RTS/FIREARM_RTS_Machine_Gun_Model_01_Fire_Single_RR1_mono.wav",
+    "seconds": 0.38
+   },
+   {
+    "id": "8d473228337c",
+    "name": "Firearm RTS Machine Gun Model 01 Fire Single RR2",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Fire_Real_Time_Strategy_RTS/FIREARM_RTS_Machine_Gun_Model_01_Fire_Single_RR2_mono.wav",
+    "seconds": 0.38
+   },
+   {
+    "id": "133ca6f7c0b7",
+    "name": "Firearm RTS Machine Gun Model 01 Fire Single RR3",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Fire_Real_Time_Strategy_RTS/FIREARM_RTS_Machine_Gun_Model_01_Fire_Single_RR3_mono.wav",
+    "seconds": 0.42
+   },
+   {
+    "id": "d37213b60a98",
+    "name": "Firearm RTS Machine Gun Model 03 Fire Single RR1",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Fire_Real_Time_Strategy_RTS/FIREARM_RTS_Machine_Gun_Model_03_Fire_Single_RR1_mono.wav",
+    "seconds": 0.49
+   },
+   {
+    "id": "2d3474bda68c",
+    "name": "Firearm RTS Machine Gun Model 03 Fire Single RR2",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Fire_Real_Time_Strategy_RTS/FIREARM_RTS_Machine_Gun_Model_03_Fire_Single_RR2_mono.wav",
+    "seconds": 0.55
+   }
+  ]
+ },
+ "gatling.fire": {
+  "about": "one gatling round",
+  "volume": 0.28,
+  "files": [
+   {
+    "id": "5b7bcddefc94",
+    "name": "Firearm RTS Machine Gun Model 06 Fire Single RR1",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Fire_Real_Time_Strategy_RTS/FIREARM_RTS_Machine_Gun_Model_06_Fire_Single_RR1_mono.wav",
+    "seconds": 0.16
+   },
+   {
+    "id": "c6a841fc1e19",
+    "name": "Firearm RTS Machine Gun Model 06 Fire Single RR2",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Fire_Real_Time_Strategy_RTS/FIREARM_RTS_Machine_Gun_Model_06_Fire_Single_RR2_mono.wav",
+    "seconds": 0.15
+   },
+   {
+    "id": "8b2a5fdddf54",
+    "name": "Firearm RTS Machine Gun Model 06 Fire Single RR3",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Fire_Real_Time_Strategy_RTS/FIREARM_RTS_Machine_Gun_Model_06_Fire_Single_RR3_mono.wav",
+    "seconds": 0.16
+   }
+  ]
+ },
+ "flame.loop": {
+  "about": "the flamethrower roaring (looped while it fires)",
+  "volume": 0.6,
+  "files": [
+   {
+    "id": "9ff3ef34d6d8",
+    "name": "Thruster Deep Powerful Burning Air Big Flames loop",
+    "rel": "Universal Sound FX/THRUSTERS_FLAMES/THRUSTER_Deep_Powerful_Burning_Air_Big_Flames_loop_mono.wav",
+    "seconds": 3.48
+   }
+  ]
+ },
+ "grenade.fire": {
+  "about": "the grenade launcher thunk",
+  "volume": 0.7,
+  "files": [
+   {
+    "id": "0be92253946a",
+    "name": "Grenade Launcher Shoot 01",
+    "rel": "Universal Sound FX/WEAPONS/Grenade_Launcher/GRENADE_LAUNCHER_Shoot_01_mono.wav",
+    "seconds": 0.78
+   },
+   {
+    "id": "f7b287453514",
+    "name": "Grenade Launcher Shoot 02",
+    "rel": "Universal Sound FX/WEAPONS/Grenade_Launcher/GRENADE_LAUNCHER_Shoot_02_mono.wav",
+    "seconds": 0.55
+   },
+   {
+    "id": "638470b12d39",
+    "name": "Grenade Launcher Shoot 03",
+    "rel": "Universal Sound FX/WEAPONS/Grenade_Launcher/GRENADE_LAUNCHER_Shoot_03_mono.wav",
+    "seconds": 0.95
+   }
+  ]
+ },
+ "grenade.bounce": {
+  "about": "a grenade bouncing",
+  "volume": 0.4,
+  "files": [
+   {
+    "id": "31a959f2fefd",
+    "name": "Impact Metal Cling Bounce",
+    "rel": "Universal Sound FX/IMPACTS/Metal/IMPACT_Metal_Cling_Bounce_mono.wav",
+    "seconds": 0.56
+   },
+   {
+    "id": "52938d2caaea",
+    "name": "Impact Metal Soft Plate Double Bounce",
+    "rel": "Universal Sound FX/IMPACTS/Metal/IMPACT_Metal_Soft_Plate_Double_Bounce_mono.wav",
+    "seconds": 1.41
+   }
+  ]
+ },
+ "explosion": {
+  "about": "a grenade or explosive round bursting",
+  "volume": 1,
+  "files": [
+   {
+    "id": "7960ab078f99",
+    "name": "Explosion Medium Blast Scatter Debris",
+    "rel": "Universal Sound FX/EXPLOSIONS/Medium/EXPLOSION_Medium_Blast_Scatter_Debris_mono.wav",
+    "seconds": 3.2
+   },
+   {
+    "id": "9d948bb52ecc",
+    "name": "Explosion Medium Bright with Distinct Kickback Debris",
+    "rel": "Universal Sound FX/EXPLOSIONS/Medium/EXPLOSION_Medium_Bright_with_Distinct_Kickback_Debris_mono.wav",
+    "seconds": 1.47
+   },
+   {
+    "id": "a479ad18e67a",
+    "name": "Explosion Medium Burst with Falling Debris",
+    "rel": "Universal Sound FX/EXPLOSIONS/Medium/EXPLOSION_Medium_Burst_with_Falling_Debris_mono.wav",
+    "seconds": 3.73
+   }
+  ]
+ },
+ "fireworks.fire": {
+  "about": "the fireworks gun launching",
+  "volume": 0.6,
+  "files": [
+   {
+    "id": "27116c1f4012",
+    "name": "Fireworks Mortar Shell Launch",
+    "rel": "Universal Sound FX/FIREWORKS/FIREWORKS_Mortar_Shell_Launch_mono.wav",
+    "seconds": 2.21
+   }
+  ]
+ },
+ "fireworks.pop": {
+  "about": "a firework rocket popping",
+  "volume": 0.45,
+  "files": [
+   {
+    "id": "5f8e26a5142b",
+    "name": "Fireworks Rocket 02 Explode Mixed",
+    "rel": "Universal Sound FX/FIREWORKS/FIREWORKS_Rocket_02_Explode_Mixed_mono.wav",
+    "seconds": 7.86
+   },
+   {
+    "id": "4a6c5e11e9c1",
+    "name": "Fireworks Rocket 03 Explode Mixed",
+    "rel": "Universal Sound FX/FIREWORKS/FIREWORKS_Rocket_03_Explode_Mixed_mono.wav",
+    "seconds": 7.97
+   },
+   {
+    "id": "1f98e49b2171",
+    "name": "Fireworks Rocket 04 Explode Mixed",
+    "rel": "Universal Sound FX/FIREWORKS/FIREWORKS_Rocket_04_Explode_Mixed_mono.wav",
+    "seconds": 3.95
+   },
+   {
+    "id": "981f09b29df5",
+    "name": "Fireworks Rocket 05 Explode Mixed",
+    "rel": "Universal Sound FX/FIREWORKS/FIREWORKS_Rocket_05_Explode_Mixed_mono.wav",
+    "seconds": 3.96
+   }
+  ]
+ },
+ "spike.fire": {
+  "about": "the spiky ball cannon firing",
+  "volume": 0.75,
+  "files": [
+   {
+    "id": "d2e94f04d230",
+    "name": "Siege Weapon Medieval Ballista Shoot 01",
+    "rel": "Universal Sound FX/WEAPONS/Siege/SIEGE_WEAPON_MEDIEVAL_Ballista_Shoot_01_mono.wav",
+    "seconds": 1.22
+   },
+   {
+    "id": "6d048fced58a",
+    "name": "Siege Weapon Medieval Ballista Shoot 02",
+    "rel": "Universal Sound FX/WEAPONS/Siege/SIEGE_WEAPON_MEDIEVAL_Ballista_Shoot_02_mono.wav",
+    "seconds": 0.85
+   }
+  ]
+ },
+ "chain.reel": {
+  "about": "the chain winding in (looped while it reels)",
+  "volume": 0.5,
+  "files": [
+   {
+    "id": "7d707e2c812d",
+    "name": "Mechanics Anchor Chain 01 loop",
+    "rel": "Universal Sound FX/MECHANICS/MECHANICS_Anchor_Chain_01_loop_mono.wav",
+    "seconds": 3.31
+   }
+  ]
+ },
+ "chain.rattle": {
+  "about": "a chain rattling (the spiky ball out, the knocker whirling)",
+  "volume": 0.5,
+  "files": [
+   {
+    "id": "ee354a42f7b8",
+    "name": "Chain Rattle 01",
+    "rel": "Universal Sound FX/FOLEY/CHAINS/CHAIN_Rattle_01_mono.wav",
+    "seconds": 3
+   },
+   {
+    "id": "6d89db536a6a",
+    "name": "Chain Rattle 02",
+    "rel": "Universal Sound FX/FOLEY/CHAINS/CHAIN_Rattle_02_mono.wav",
+    "seconds": 1.86
+   },
+   {
+    "id": "7b9f08a4425c",
+    "name": "Chain Rattle 03",
+    "rel": "Universal Sound FX/FOLEY/CHAINS/CHAIN_Rattle_03_mono.wav",
+    "seconds": 1.13
+   }
+  ]
+ },
+ "whoosh": {
+  "about": "the knocker sweeping round, a lunge",
+  "volume": 0.45,
+  "files": [
+   {
+    "id": "da9766123e3b",
+    "name": "Whoosh Air Fast Wind RR1",
+    "rel": "Universal Sound FX/WHOOSHES/Air/WHOOSH_Air_Fast_Wind_RR1_mono.wav",
+    "seconds": 0.19
+   },
+   {
+    "id": "38fd2d627005",
+    "name": "Whoosh Air Fast Wind RR2",
+    "rel": "Universal Sound FX/WHOOSHES/Air/WHOOSH_Air_Fast_Wind_RR2_mono.wav",
+    "seconds": 0.19
+   },
+   {
+    "id": "d044996bec77",
+    "name": "Whoosh Fast Air",
+    "rel": "Universal Sound FX/WHOOSHES/Classic/WHOOSH_Fast_Air_mono.wav",
+    "seconds": 0.22
+   }
+  ]
+ },
+ "knock.hit": {
+  "about": "the knocker ball smashing into something",
+  "volume": 0.8,
+  "files": [
+   {
+    "id": "a01785dd02c7",
+    "name": "Impact Metal Large Deep Metallic Bang Rattle",
+    "rel": "Universal Sound FX/IMPACTS/Metal/IMPACT_Metal_Large_Deep_Metallic_Bang_Rattle_stereo.wav",
+    "seconds": 2.19
+   },
+   {
+    "id": "4802d7e7a792",
+    "name": "Impact Metal Hit Large Metal 01",
+    "rel": "Universal Sound FX/IMPACTS/Metal/IMPACT_Metal_Hit_Large_Metal_01_mono.wav",
+    "seconds": 1.11
+   }
+  ]
+ },
+ "hit.shell": {
+  "about": "a round hitting a crab",
+  "volume": 0.45,
+  "files": [
+   {
+    "id": "b04f256142b3",
+    "name": "Crack High 01",
+    "rel": "Universal Sound FX/BREAKS_SNAPS/CRACK_High_01_mono.wav",
+    "seconds": 0.67
+   },
+   {
+    "id": "6eb90e45b5b2",
+    "name": "Crack High 02",
+    "rel": "Universal Sound FX/BREAKS_SNAPS/CRACK_High_02_mono.wav",
+    "seconds": 0.26
+   },
+   {
+    "id": "0f392b600a96",
+    "name": "Break Crunch 01",
+    "rel": "Universal Sound FX/BREAKS_SNAPS/BREAK_Crunch_01_mono.wav",
+    "seconds": 1.07
+   },
+   {
+    "id": "e405c048ac5e",
+    "name": "Break Crunch 02",
+    "rel": "Universal Sound FX/BREAKS_SNAPS/BREAK_Crunch_02_mono.wav",
+    "seconds": 0.73
+   },
+   {
+    "id": "8fe00fe2d89b",
+    "name": "Crack Bright Crisp 01",
+    "rel": "Universal Sound FX/BREAKS_SNAPS/CRACK_Bright_Crisp_01_mono.wav",
+    "seconds": 0.69
+   }
+  ]
+ },
+ "hit.metal": {
+  "about": "a round hitting a metal piece or weapon",
+  "volume": 0.4,
+  "files": [
+   {
+    "id": "3d317a5d4d70",
+    "name": "Impact Bullet Metal 01",
+    "rel": "Universal Sound FX/IMPACTS/Bullets/IMPACT_Bullet_Metal_01_mono.wav",
+    "seconds": 0.23
+   },
+   {
+    "id": "e517a68131ff",
+    "name": "Impact Bullet Metal 02",
+    "rel": "Universal Sound FX/IMPACTS/Bullets/IMPACT_Bullet_Metal_02_mono.wav",
+    "seconds": 0.27
+   },
+   {
+    "id": "926d56a95e72",
+    "name": "Impact Bullet Metal 03",
+    "rel": "Universal Sound FX/IMPACTS/Bullets/IMPACT_Bullet_Metal_03_mono.wav",
+    "seconds": 0.37
+   }
+  ]
+ },
+ "hit.wood": {
+  "about": "a round hitting wood",
+  "volume": 0.45,
+  "files": [
+   {
+    "id": "37be671f8030",
+    "name": "Impact Wood 01",
+    "rel": "Universal Sound FX/IMPACTS/Wood/IMPACT_Wood_01_mono.wav",
+    "seconds": 0.49
+   },
+   {
+    "id": "1f03ff362f53",
+    "name": "Siege Weapon Medieval Ballista Bolt Impact Wood 01",
+    "rel": "Universal Sound FX/WEAPONS/Siege/SIEGE_WEAPON_MEDIEVAL_Ballista_Bolt_Impact_Wood_01_mono.wav",
+    "seconds": 0.76
+   },
+   {
+    "id": "6c8ee956a49c",
+    "name": "Siege Weapon Medieval Ballista Bolt Impact Wood 02",
+    "rel": "Universal Sound FX/WEAPONS/Siege/SIEGE_WEAPON_MEDIEVAL_Ballista_Bolt_Impact_Wood_02_mono.wav",
+    "seconds": 0.62
+   }
+  ]
+ },
+ "hit.stone": {
+  "about": "a round hitting a rock or stone",
+  "volume": 0.4,
+  "files": [
+   {
+    "id": "3d1410a7e674",
+    "name": "Impact Stone Deep",
+    "rel": "Universal Sound FX/IMPACTS/Stone/IMPACT_Stone_Deep_mono.wav",
+    "seconds": 0.3
+   },
+   {
+    "id": "45f9d14e219a",
+    "name": "Impact Stone On Stone 05",
+    "rel": "Universal Sound FX/IMPACTS/Stone/IMPACT_Stone_On_Stone_05_mono.wav",
+    "seconds": 0.11
+   },
+   {
+    "id": "e9b69bc39fec",
+    "name": "Impact Stone On Stone 06",
+    "rel": "Universal Sound FX/IMPACTS/Stone/IMPACT_Stone_On_Stone_06_mono.wav",
+    "seconds": 0.17
+   }
+  ]
+ },
+ "break.wood": {
+  "about": "a wooden piece or driftwood breaking apart",
+  "volume": 0.8,
+  "files": [
+   {
+    "id": "9a8f5ffa8534",
+    "name": "Destruction Wood Debris 01",
+    "rel": "Universal Sound FX/DESTRUCTION/DESTRUCTION_Wood_Debris_01_mono.wav",
+    "seconds": 2.44
+   },
+   {
+    "id": "bf4eb356afb5",
+    "name": "Demolish Wood 01",
+    "rel": "Universal Sound FX/DEMOLISH/DEMOLISH_Wood_01_mono.wav",
+    "seconds": 0.93
+   },
+   {
+    "id": "e78ddfe88731",
+    "name": "Demolish Wood 02",
+    "rel": "Universal Sound FX/DEMOLISH/DEMOLISH_Wood_02_mono.wav",
+    "seconds": 0.82
+   },
+   {
+    "id": "f779dd5b47b6",
+    "name": "Break Bright Splinters",
+    "rel": "Universal Sound FX/BREAKS_SNAPS/BREAK_Bright_Splinters_mono.wav",
+    "seconds": 0.86
+   }
+  ]
+ },
+ "break.metal": {
+  "about": "a metal piece or weapon breaking off",
+  "volume": 0.8,
+  "files": [
+   {
+    "id": "46b828df1935",
+    "name": "Destruction Tin Debris 01",
+    "rel": "Universal Sound FX/DESTRUCTION/DESTRUCTION_Tin_Debris_01_mono.wav",
+    "seconds": 0.85
+   },
+   {
+    "id": "c1c1808109a9",
+    "name": "Demolish Metal 01",
+    "rel": "Universal Sound FX/DEMOLISH/DEMOLISH_Metal_01_mono.wav",
+    "seconds": 1.05
+   },
+   {
+    "id": "a82aeb5e37d9",
+    "name": "Demolish Metal 02",
+    "rel": "Universal Sound FX/DEMOLISH/DEMOLISH_Metal_02_mono.wav",
+    "seconds": 0.69
+   }
+  ]
+ },
+ "break.shell": {
+  "about": "a crab cracking and falling apart",
+  "volume": 1,
+  "files": [
+   {
+    "id": "8eb2fb4a2f93",
+    "name": "Destruction Rocks 01",
+    "rel": "Universal Sound FX/DESTRUCTION/DESTRUCTION_Rocks_01_mono.wav",
+    "seconds": 1.47
+   },
+   {
+    "id": "051a49609f1f",
+    "name": "Demolish Stone 01",
+    "rel": "Universal Sound FX/DEMOLISH/DEMOLISH_Stone_01_mono.wav",
+    "seconds": 1.54
+   },
+   {
+    "id": "080d47e2f4ba",
+    "name": "Break Deep Crack 01",
+    "rel": "Universal Sound FX/BREAKS_SNAPS/BREAK_Deep_Crack_01_mono.wav",
+    "seconds": 0.89
+   }
+  ]
+ },
+ "nip": {
+  "about": "a claw snapping shut",
+  "volume": 0.6,
+  "files": [
+   {
+    "id": "c5e740c1b73e",
+    "name": "Impact Snappy 01",
+    "rel": "Universal Sound FX/IMPACTS/Snappy/IMPACT_Snappy_01_mono.wav",
+    "seconds": 0.15
+   },
+   {
+    "id": "cd184ed4f9fa",
+    "name": "Impact Snappy 02",
+    "rel": "Universal Sound FX/IMPACTS/Snappy/IMPACT_Snappy_02_mono.wav",
+    "seconds": 0.19
+   },
+   {
+    "id": "aa5e580baff3",
+    "name": "Snap Clean",
+    "rel": "Universal Sound FX/BREAKS_SNAPS/SNAP_Clean_mono.wav",
+    "seconds": 0.53
+   }
+  ]
+ },
+ "jump": {
+  "about": "a jump",
+  "volume": 0.3,
+  "files": [
+   {
+    "id": "9ebe427feb1d",
+    "name": "Whoosh Air Fast Subtle RR1",
+    "rel": "Universal Sound FX/WHOOSHES/Air/WHOOSH_Air_Fast_Subtle_RR1_mono.wav",
+    "seconds": 0.19
+   },
+   {
+    "id": "523f56f6feaa",
+    "name": "Whoosh Air Fast Subtle RR2",
+    "rel": "Universal Sound FX/WHOOSHES/Air/WHOOSH_Air_Fast_Subtle_RR2_mono.wav",
+    "seconds": 0.19
+   }
+  ]
+ },
+ "pickup.weapon": {
+  "about": "a weapon picked up",
+  "volume": 0.7,
+  "files": [
+   {
+    "id": "6ce3b73ef7a7",
+    "name": "Change Weapon",
+    "rel": "Epic Game Hits SFX/Change Weapon.wav",
+    "seconds": 1.24
+   },
+   {
+    "id": "e61f01c7f37d",
+    "name": "Hi Tech Game Pick Up",
+    "rel": "Epic Game Hits SFX/Hi Tech Game Pick Up.wav",
+    "seconds": 0.26
+   }
+  ]
+ },
+ "pickup.ammo": {
+  "about": "an ammo crate",
+  "volume": 0.7,
+  "files": [
+   {
+    "id": "c755d0307e1c",
+    "name": "Handling 9mm Ammo Cardboard Box Take Bullet RR1",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Handling/HANDLING_9mm_Ammo_Cardboard_Box_Take_Bullet_RR1_mono.wav",
+    "seconds": 1.16
+   },
+   {
+    "id": "bb5d5800b08c",
+    "name": "Handling 9mm Ammo Cardboard Box Take Bullet RR2",
+    "rel": "Universal Sound FX/WEAPONS/Firearms/Handling/HANDLING_9mm_Ammo_Cardboard_Box_Take_Bullet_RR2_mono.wav",
+    "seconds": 1.03
+   }
+  ]
+ },
+ "pickup.health": {
+  "about": "a health box",
+  "volume": 0.7,
+  "files": [
+   {
+    "id": "549c8054e059",
+    "name": "Recharge Energy1",
+    "rel": "Epic Game Hits SFX/Recharge Energy1.wav",
+    "seconds": 0.45
+   }
+  ]
+ },
+ "pickup.star": {
+  "about": "a starfish (invincible)",
+  "volume": 0.7,
+  "files": [
+   {
+    "id": "39ddef9a7618",
+    "name": "8BIT Retro Powerup Spawn Quick Climbing",
+    "rel": "Universal Sound FX/8BIT/Powerups/8BIT_RETRO_Powerup_Spawn_Quick_Climbing_mono.wav",
+    "seconds": 0.43
+   }
+  ]
+ },
+ "pickup.power": {
+  "about": "a Bullet Hell power-up",
+  "volume": 0.7,
+  "files": [
+   {
+    "id": "aa1c830b51a2",
+    "name": "Sweet Tech Game Item Pick Up Sound",
+    "rel": "Epic Game Hits SFX/Sweet Tech Game Item Pick Up Sound.wav",
+    "seconds": 0.56
+   }
+  ]
+ },
+ "shot.off": {
+  "about": "a weapon shot off the tower",
+  "volume": 0.7,
+  "files": [
+   {
+    "id": "03b144959c35",
+    "name": "Impact Metal Large Rattle",
+    "rel": "Universal Sound FX/IMPACTS/Metal/IMPACT_Metal_Large_Rattle_stereo.wav",
+    "seconds": 1.86
+   }
+  ]
+ },
+ "stage": {
+  "about": "a new stage",
+  "volume": 0.6,
+  "files": [
+   {
+    "id": "2b388060bfe5",
+    "name": "Music Effect Orchestral Battle Neutral",
+    "rel": "Universal Sound FX/MUSIC_EFFECTS/MUSIC_EFFECT_Orchestral_Battle_Neutral_stereo.wav",
+    "seconds": 5.18
+   }
+  ]
+ },
+ "cracked": {
+  "about": "the player cracked",
+  "volume": 0.6,
+  "files": [
+   {
+    "id": "0c0db700bcac",
+    "name": "Music Effect Orchestral Battle Negative",
+    "rel": "Universal Sound FX/MUSIC_EFFECTS/MUSIC_EFFECT_Orchestral_Battle_Negative_stereo.wav",
+    "seconds": 5.58
+   }
+  ]
+ },
+ "ambience.sea": {
+  "about": "the sea on the beach (looped)",
+  "volume": 0.35,
+  "files": [
+   {
+    "id": "af4072240b40",
+    "name": "Water Sea Waves Small 7sec loop",
+    "rel": "Universal Sound FX/ELEMENTS/Water/Sea/WATER_Sea_Waves_Small_7sec_loop_stereo.wav",
+    "seconds": 7.4
+   }
+  ]
+ }
+}

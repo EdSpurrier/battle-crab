@@ -5,6 +5,7 @@ import { pieceType, type PieceKind } from './shell';
 import { isPushable, radialImpulse, withLength } from './physics';
 import { PROP_LOOKS, isPropRef } from './props';
 import { debrisFor, type DebrisStuff } from './debris';
+import { sfx } from './sound';
 import type { HitKind } from './combat';
 import { CANNON_SPEED, GRENADE_SPEED, SPIKE_SPEED, isPartRef, type Mounted, type Structure } from './structure';
 
@@ -113,6 +114,7 @@ interface Rocket {
   wobble: number;
 }
 
+let nextSoundId = 1;
 const isCombatant = (o: unknown): o is Combatant => !!o && typeof o === 'object' && 'hurt' in o;
 
 const BALL: Vec = [0.12, 0.12, 0.13];
@@ -368,6 +370,7 @@ export class Arsenal {
             this.cooldown.set(w, 1 * b.rate);
             w.kick = 1;
             this.flash(muzzle, [1, 0.75, 0.35], 0.12, 8, 40);
+            sfx.play('cannon.fire', muzzle);
             for (const dir of this.fan(facing, b.streams)) this.ball(muzzle, [dir[0] * CANNON_SPEED, dir[1] * CANNON_SPEED, dir[2] * CANNON_SPEED], b);
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 18, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 6, dir: facing, cone: 0.35, life: 0.2, size: 0.2, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
             this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 30, color: [0.55, 0.55, 0.55], colorTo: [0.3, 0.3, 0.3], speed: 3, dir: facing, cone: 0.5, up: 0.6, life: 1.8, size: 0.35, drag: 1.2, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
@@ -378,6 +381,7 @@ export class Arsenal {
           if (held && rate > 0.55 && cool <= 0 && this.spend(w, 1)) {
             const b = this.boostOf(w);
             this.cooldown.set(w, (1 / (8 + rate * 22)) * b.rate);
+            sfx.play('gatling.fire', muzzle);
             w.kick = 0.6;
             for (const dir of this.fan(facing, b.streams)) this.tracer(muzzle, dir, 0.03, DAMAGE.gatling * b.damage, b.size, b.blast);
           }
@@ -387,6 +391,7 @@ export class Arsenal {
           if (held && cool <= 0 && this.spend(w, 1)) {
             const b = this.boostOf(w);
             this.cooldown.set(w, 0.11 * b.rate);
+            sfx.play('machinegun.fire', muzzle);
             w.kick = 0.3;
             for (const dir of this.fan(facing, b.streams)) this.tracer(muzzle, dir, 0.04, DAMAGE.machinegun * b.damage, b.size, b.blast);
           }
@@ -395,6 +400,7 @@ export class Arsenal {
           if (held && this.spend(w, dt)) {
             w.kick = 0.3;
             this.flaming = { at: [muzzle[0] + facing[0] * 3, muzzle[1] + facing[1] * 3 + 0.5, muzzle[2] + facing[2] * 3], ttl: 0.1 };
+            sfx.hold(this.soundId(w, 'flame'), 'flame.loop', muzzle);
             for (const o of this.world.inCone(muzzle, facing, 6.5, 0.36, this.owner, this.structure.flatAim)) {
               if (isCombatant(o)) o.hurt(DAMAGE.flamethrower * dt * this.damageScale, 'flame', muzzle);
               else if (isPartRef(o)) {
@@ -421,6 +427,7 @@ export class Arsenal {
             const b = this.boostOf(w);
             this.cooldown.set(w, 0.75 * b.rate);
             this.cooldownMax.set(w, 0.75 * b.rate);
+            sfx.play('grenade.fire', muzzle);
             w.kick = 0.8;
             this.flash(muzzle, [1, 0.8, 0.4], 0.08, 4, 20);
             for (const dir of this.fan(facing, b.streams)) {
@@ -436,6 +443,7 @@ export class Arsenal {
         case 'fireworks':
           if ((pulled || held) && cool <= 0 && this.spend(w, 1)) {
             this.cooldown.set(w, 0.7);
+            sfx.play('fireworks.fire', muzzle);
             w.kick = 1;
             for (let k = 0; k < 6; k++) {
               const [c0, c1] = FIREWORK_COLORS[Math.floor(Math.random() * FIREWORK_COLORS.length)];
@@ -477,7 +485,10 @@ export class Arsenal {
         const vn = g.vel[0] * n[0] + g.vel[1] * n[1] + g.vel[2] * n[2];
         g.vel = [(g.vel[0] - 2 * vn * n[0]) * GRENADE_BOUNCE, (g.vel[1] - 2 * vn * n[1]) * GRENADE_BOUNCE, (g.vel[2] - 2 * vn * n[2]) * GRENADE_BOUNCE];
         g.pos = [hit.point[0] + n[0] * 0.14, hit.point[1] + n[1] * 0.14, hit.point[2] + n[2] * 0.14];
-        if (Math.abs(vn) > 2) impactFx(this.renderer, hit, 0.4);
+        if (Math.abs(vn) > 2) {
+          impactFx(this.renderer, hit, 0.4);
+          sfx.play('grenade.bounce', hit.point, Math.min(1, Math.abs(vn) / 10));
+        }
         // A bounce sets it tumbling faster.
         g.spin += (Math.random() - 0.5) * 4;
       } else g.pos = next;
@@ -574,7 +585,9 @@ export class Arsenal {
       // wherever the ball is now), a little below it, so it sweeps round the crab at the chain's length.
       if (f.drawn === 0) f.angle = Math.atan2(ball[2] - anchor[2], ball[0] - anchor[0]);
       f.drawn = Math.min(1, f.drawn + dt / KNOCK_SPIN_UP);
+      const turn = Math.floor(f.angle / Math.PI);
       f.angle += (KNOCK_SPIN_MIN + (KNOCK_SPIN_MAX - KNOCK_SPIN_MIN) * f.drawn) * dt;
+      if (Math.floor(f.angle / Math.PI) !== turn) sfx.play('whoosh', ball, 0.4 + 0.6 * f.drawn, 0.8 + 0.4 * f.drawn);
       // Down at the height of a crab's shell, as far out as the chain lets it reach from there.
       const y = Math.min(anchor[1] - 0.3, this.world.heightAt(anchor[0], anchor[2]) + KNOCK_SWEEP_HEIGHT);
       const dy = anchor[1] - y;
@@ -616,6 +629,7 @@ export class Arsenal {
       if (this.knockHits.has(key)) continue;
       this.knockHits.set(key, this.clock + 0.5);
       this.cause('blow', [m.muzzle[0] - vel[0], m.muzzle[1], m.muzzle[2] - vel[2]]);
+      sfx.play('knock.hit', m.muzzle);
       this.hurtBox(o, DAMAGE.knocker * Math.min(1, speed / KNOCK_FULL_SPEED), 3, [vel[0] * KNOCK_PUNCH, Math.abs(vel[1]) * KNOCK_PUNCH * 0.5 + 1, vel[2] * KNOCK_PUNCH]);
       f.rope.slowEnd(0.45);
     }
@@ -647,6 +661,8 @@ export class Arsenal {
         t.ball.hidden = false;
         w.kick = 1;
         this.flash(muzzle, [1, 0.75, 0.35], 0.1, 6, 30);
+        sfx.play('spike.fire', muzzle);
+        sfx.play('chain.rattle', muzzle, 0.7);
         this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 14, color: [1, 0.85, 0.5], colorTo: [1, 0.4, 0.1], speed: 5, dir: facing, cone: 0.35, life: 0.18, size: 0.16, fadeCurve: 'down', sizeCurve: 'peak', shape: 'disc' });
       } else if (t.phase === 'flying' || t.phase === 'landed') {
         t.phase = 'reeling';
@@ -703,6 +719,7 @@ export class Arsenal {
       // The drum winds the chain in link by link; the ball is the chain's free end, dragged along behind it
       // over the sand (scuffing up dust) and round whatever is in the way, until it is home.
       t.rope.wound = Math.min(SPIKE_LINKS, t.rope.wound + (WINCH_SPEED * dt) / t.rope.seg);
+      sfx.hold(this.soundId(w, 'reel'), 'chain.reel', muzzle);
       const was: Vec3 = [t.pos[0], t.pos[1], t.pos[2]];
       const onGround = t.pos[1] <= this.world.heightAt(t.pos[0], t.pos[2]) + 0.46;
       t.rope.step(dt, muzzle, null, null, 0.8, onGround ? 5 : 0.3);
@@ -764,6 +781,7 @@ export class Arsenal {
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 46, color: r.color, colorTo: r.colorTo, speed: 6, cone: Math.PI, life: 0.8, size: 0.09, gravity: 3, drag: 1.5, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark', stretch: 2 });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 24, color: r.colorTo, colorTo: [1, 1, 1], speed: 2.5, cone: Math.PI, life: 1.6, size: 0.06, gravity: 4, drag: 0.8, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark' });
         this.cause('blast', r.pos);
+        sfx.play('fireworks.pop', r.pos);
         for (const o of this.world.near(r.pos, 2.2, this.owner)) this.hurtBox(o, DAMAGE.fireworks, 1, radialImpulse(r.pos, o.center, 2.2, 3.5) ?? undefined);
         this.rockets.splice(i, 1);
       }
@@ -785,6 +803,7 @@ export class Arsenal {
           const punch = withLength([b.vel[0], 0, b.vel[2]], CANNON_PUNCH * b.size);
           punch[1] = 3.5 * b.size;
           this.cause('blow', b.pos);
+          sfx.play('cannon.land', hit.point, Math.min(1.3, 0.8 + 0.2 * b.size));
           this.land(hit, 4 * b.size, DAMAGE.cannon * b.damage, punch);
           const reach = CANNON_PUSH_RADIUS * Math.sqrt(b.size);
           this.dustRing(hit.point, reach);
@@ -822,6 +841,7 @@ export class Arsenal {
     this.pushAt(at, radius * 1.3, 2.2 * radius);
     const p = this.renderer.particles;
     const [x, y, z] = [at[0], at[1] + 0.2, at[2]];
+    sfx.play('explosion', at, big ? 1 : 0.45, big ? 1 : 1.3);
     if (!big) {
       p.emit(x, y, z, { count: 4, color: [3, 2.2, 1], colorTo: [2, 0.6, 0.1], speed: 0.3, life: 0.14, size: radius * 0.9, fadeCurve: 'down', sizeCurve: 'up', shape: 'disc' });
       p.emit(x, y, z, { count: Math.round(10 * radius), color: [0.5, 0.45, 0.4], colorTo: [0.25, 0.25, 0.25], speed: radius * 1.5, up: 1, life: 1 + radius * 0.2, size: 0.3 + radius * 0.12, drag: 1.5, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
@@ -849,6 +869,8 @@ export class Arsenal {
   /** A heavy thing slamming down (or yanked up) at `at`: a ring of dust to `radius`, a push on all in it but `except`, sand flung. */
   private slam(at: Vec3, radius: number, strength: number, except?: unknown): void {
     const ground: Vec3 = [at[0], Math.min(at[1], this.world.heightAt(at[0], at[2]) + 0.3), at[2]];
+    sfx.play('cannon.land', ground, Math.min(1.1, 0.4 + strength / 20));
+    if (strength < SPIKE_SLAM_PUSH) sfx.play('chain.rattle', ground);
     this.dustRing(ground, radius);
     this.pushAt(ground, radius, strength, except);
   }
@@ -901,7 +923,22 @@ export class Arsenal {
       stuff = PROP_LOOKS[owner.props.defs[owner.index]?.kind ?? 'rock'].stuff ?? null;
       owner.props.damage(owner.index, damage * this.damageScale, at);
     }
-    if (stuff && at) this.chips(at, stuff, damage);
+    if (stuff && at) {
+      this.chips(at, stuff, damage);
+      const key = stuff === 'shell' ? 'hit.shell' : stuff === 'wood' ? 'hit.wood' : stuff === 'metal' ? 'hit.metal' : 'hit.stone';
+      sfx.play(key, at, Math.min(1.2, 0.5 + damage / 40));
+    }
+  }
+
+  /** A name for a weapon's loop (its flame, its winch), the same every frame. */
+  private readonly soundIds = new Map<Mounted, number>();
+  private soundId(m: Mounted, what: string): string {
+    let id = this.soundIds.get(m);
+    if (id === undefined) {
+      id = nextSoundId++;
+      this.soundIds.set(m, id);
+    }
+    return `${what}:${id}`;
   }
 
   /** Chunks off what was hit, by how hard: flung away from where the hit came from, and up. */

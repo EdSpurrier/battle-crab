@@ -4,6 +4,7 @@ import { debrisFor } from './debris';
 import { wreckFx } from './impacts';
 import type { Loot } from './loot';
 import type { Structure } from './structure';
+import { sfx } from './sound';
 
 /**
  * A crab cracks and comes apart, the moment it is killed: every piece on its shell (weapons, planks,
@@ -17,6 +18,7 @@ export function fallApart(renderer: Renderer, crab: Crab, structure: Structure, 
   const s = Math.hypot(b[0], b[1], b[2]) || 1;
   const centre: Vec3 = [b[12], b[13] + 0.3 * s, b[14]];
   wreckFx(renderer, centre);
+  sfx.play('break.shell', centre, 1.2);
   structure.shedAll();
   // The claws: loose pieces lying a while (less than rubble) at the crab's own size.
   crab.shedClaws((instance: Instance, at: Vec3, vel: Vec3, scale: number) => {

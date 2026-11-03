@@ -9,6 +9,7 @@ import { buildGround } from './ground';
 import { World } from './impacts';
 import { debrisFor } from './debris';
 import { fallApart } from './fallApart';
+import { sfx } from './sound';
 import { LifeBars } from './lifebars';
 import { Hell, hellBuild } from './hell';
 import { Waves } from './waves';
@@ -147,6 +148,12 @@ controls.targetUnder = (from, dir) => {
   return on ? [on.box.center[0], on.box.center[1], on.box.center[2]] : null;
 };
 // Opening the panel gives the cursor back (so it can be used); the game plays on underneath.
+look.panel
+  .section('Sound')
+  .toggle_('sound.on', 'Sound', () => !sfx.mute, (v) => (sfx.mute = !v))
+  .slider('sound.volume', 'Volume', 0, 1, 0.05, () => sfx.volume, (v) => (sfx.volume = v));
+// Sound starts with the first click or key (the browser's rule); the sea washes in under everything.
+sfx.armOnGesture();
 look.panel.section('Game').toggle_('game.unlimitedAmmo', 'Unlimited ammo', () => unlimitedAmmo, (v) => {
   unlimitedAmmo = v;
   // (the action bar shows it on its next refresh)
@@ -249,6 +256,7 @@ structure.onChange = () => {
 /** A nip: the claws reach a little way in front, and whoever (or whatever piece) is there takes it, by the claws worn. */
 function nip(): void {
   player.crab.snapNext();
+  sfx.play('nip', player.position);
   const b = player.crab.body;
   const reach = 2.4 * Math.sqrt(CLAWS[build.claws].scale);
   for (const o of world.inCone([b[12], b[13], b[14]], [b[8], 0, b[10]], reach, 0.7, player)) {
@@ -434,6 +442,10 @@ function frame(now: number): void {
     if (firingAll) for (const m of structure.weapons) arsenal.fire(m, true);
   }
   debris.update(dt);
+  sfx.listener = player.position;
+  sfx.right = camera.right();
+  sfx.hold('sea', 'ambience.sea');
+  sfx.update(dt);
   // A gamepad joins in over the keys and the mouse: the left stick walks (in the camera's frame), the right
   // stick faces (top down: the aim marker goes a little way out that way and stays until the mouse moves;
   // 3rd person: it orbits the camera), the left stick pressed in runs, A jumps, LB / RB / LT / RT fire the slots.
@@ -469,6 +481,7 @@ function frame(now: number): void {
   else {
     // Cracked: the crab keels over, a burst of shell as it settles, a few seconds down, then back at the start, whole.
     if (deadFor === 0) {
+      sfx.play('cracked');
       arsenal.releaseAll();
       firingAll = false;
       nipping = false;
@@ -505,6 +518,7 @@ function frame(now: number): void {
   structure.update(dt);
   // Pickups: walk over one.
   pickups.update(dt, player.position, (kind) => {
+    sfx.play(kind === 'ammo' ? 'pickup.ammo' : kind === 'health' ? 'pickup.health' : kind === 'power' ? 'pickup.power' : 'pickup.star');
     if (kind === 'ammo') {
       arsenal.refill();
       say('Ammunition!');
@@ -523,12 +537,16 @@ function frame(now: number): void {
   const refused = loot.update(dt, player.alive ? player.position : null, 1.4, (kind) => {
     if (hell || !structure.pickUp(kind)) return false;
     say(`Picked up a ${pieceType(kind).name.toLowerCase()} · ${structure.weapons.length} / ${MAX_CARRIED}`);
+    sfx.play('pickup.weapon');
     return true;
   });
   if (refused && !hell && noticeFor <= 0) say(`Carrying ${MAX_CARRIED} already: no room for the ${pieceType(refused).name.toLowerCase()}`);
   // A hard knock through each quarter of the crab's health shoots its top weapon off (a stacked one first).
   const healthNow = Math.ceil((player.health / player.maxHealth) * HEALTH_STAGES);
-  if (player.alive && !hell && healthNow < healthStage && structure.shedTop()) say('A weapon was shot off!');
+  if (player.alive && !hell && healthNow < healthStage && structure.shedTop()) {
+    say('A weapon was shot off!');
+    sfx.play('shot.off');
+  }
   healthStage = player.alive ? healthNow : HEALTH_STAGES;
   if (noticeFor > 0) {
     noticeFor -= dt;
@@ -562,7 +580,10 @@ function frame(now: number): void {
       // Every few, a new stage; Bullet Hell: now and then a cracked crab leaves a power-up where it fell.
       respawnIn = Math.max(respawnIn, waves.respawnSeconds());
       const news = waves.onKill();
-      if (news) say(news);
+      if (news) {
+        say(news);
+        sfx.play('stage');
+      }
       if (hell && hell.onKill()) pickups.place('power', [at[0], at[1], at[2]]);
     }
     if (e.gone) {
@@ -600,4 +621,4 @@ function frame(now: number): void {
 }
 requestAnimationFrame(frame);
 // A handle on the game for the browser console (poking at the player, the enemies, the lights).
-(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera, loot, hell, waves, pickups, props, debris };
+(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera, loot, hell, waves, pickups, props, debris, sfx };

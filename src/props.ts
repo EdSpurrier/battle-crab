@@ -1,6 +1,7 @@
 import { Mesh, MeshBuilder, VERTEX_FLOATS, box, material, multiply, rotationY, scaling, translation, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { shatter, type Obstacle, type Stuff, type Surface, type World } from './impacts';
 import type { Loot } from './loot';
+import { sfx } from './sound';
 import { PROP_KINDS, type PropDef, type PropKind } from './map';
 
 /**
@@ -241,6 +242,7 @@ export class Props {
     this.boxes[i] = null;
     const c: Vec3 = wall ? wall.center : [d.x, this.groundHeight(d.x, d.z) + 0.2 * d.scale, d.z];
     const stuff = look.stuff ?? 'stone';
+    sfx.play(stuff === 'wood' ? 'break.wood' : 'break.shell', c);
     shatter(this.renderer, at ? [at[0], Math.max(at[1], c[1]), at[2]] : c, stuff, 2.5 * Math.sqrt(d.scale));
     shatter(this.renderer, c, stuff, 1.5 * Math.sqrt(d.scale));
     if (!this.loot) return;

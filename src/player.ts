@@ -5,6 +5,7 @@ import type { Obstacle } from './impacts';
 import type { Pushable } from './physics';
 import type { HitKind } from './combat';
 import type { DeathStyle } from './crab';
+import { sfx } from './sound';
 import { SHELLS, weightFactor, type ClawKind, type ShellType } from './shell';
 
 /** A full sprint lasts this long unladen (weight shortens it: × weightFactor), and comes all the way back in STAMINA_REST. */
@@ -223,6 +224,7 @@ export class Player implements Pushable {
     // Jumping: straight up off the ground, down under gravity; the walk carries on in the air.
     if (jump && !this.airborne) {
       this.vy = this.jumpSpeed;
+      sfx.play(len > 1e-4 ? 'whoosh' : 'jump', this.position, len > 1e-4 ? 0.8 : 1);
       // Pushing a way: a lunge that way (out of trouble, or in at someone), as quick as the crab is; no way, straight up.
       if (len > 1e-4) {
         const k = (LUNGE * Math.min(1, len) * this.speed) / (4.8 * len);
