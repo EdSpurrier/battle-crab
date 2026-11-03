@@ -26,25 +26,27 @@ interface Rules {
 }
 
 const RULES: Record<WaveMode, Rules> = {
-  // The battle: the random-build crabs it always had, joined stage by stage by the other kinds.
+  // The battle: it opens gently, two little crabs at a time; the full-size random-build crabs and the march
+  // join at stage 2, gunners and skirmishers at 3, bruisers at 4, rocketeers and a boss at 5. Each stage adds one.
   battle: {
     killsPerStage: 5,
-    start: 3,
+    start: 2,
     perStage: 1,
     max: 9,
     respawn: 4,
     respawnStep: 0.3,
     respawnMin: 1.4,
     roster: (s) => ({
-      random: 3,
-      marcher: s >= 2 ? 1.6 : 0,
+      scout: s <= 2 ? 3 : 1,
+      marcher: s >= 2 ? 1.2 : 0,
+      random: s >= 2 ? (s === 2 ? 1.2 : 2.5) : 0,
       gunner: s >= 3 ? 1 : 0,
       skirmisher: s >= 3 ? 1 : 0,
       bruiser: s >= 4 ? 0.9 : 0,
       rocketeer: s >= 5 ? 0.9 : 0,
     }),
     news: {
-      2: 'march crabs swarm in',
+      2: 'full-size crabs and the march join in',
       3: 'gunners and skirmishers join',
       4: 'bruisers lumber in under heavy guns',
       5: 'rocketeers shell from afar, and a boss',
@@ -53,7 +55,7 @@ const RULES: Record<WaveMode, Rules> = {
   // Bullet Hell: a march from the start, faster and fuller.
   hell: {
     killsPerStage: 6,
-    start: 4,
+    start: 3,
     perStage: 1.5,
     max: 12,
     respawn: 2.4,
@@ -128,7 +130,7 @@ export class Waves {
 
   /** The kind the beach starts with (before any stage has its say). */
   firstKind(): EnemyKind {
-    return this.mode === 'hell' ? ENEMY_KINDS.marcher : ENEMY_KINDS.random;
+    return this.mode === 'hell' ? ENEMY_KINDS.marcher : ENEMY_KINDS.scout;
   }
 
   /** The next opponent to send: a boss once per fifth stage, marchers in threes, the rest by the stage's roster. */

@@ -22,6 +22,8 @@ import { Arsenal } from './weapons';
  */
 
 const WEAPONS = PIECES.filter((p) => p.weapon).map((p) => p.kind);
+/** Opponents have this share of the health their shell and kind would give them (half: they crack quicker). */
+const ENEMY_HEALTH = 0.5;
 /** A corpse lies this long, then takes this long to sink into the sand. */
 const CORPSE_SECONDS = 20;
 const SINK_SECONDS = 1.6;
@@ -95,7 +97,7 @@ export class Enemy implements Combatant {
     const shell = SHELLS.find((s) => s.id === build.shell);
     this.player = new Player(renderer, ground, at, shell, build.claws);
     this.player.crab.scale = kind.scale;
-    this.player.maxHealth = Math.round((shell?.armor ?? 100) * kind.armor * (options.armorScale ?? 1));
+    this.player.maxHealth = Math.round((shell?.armor ?? 100) * kind.armor * (options.armorScale ?? 1) * ENEMY_HEALTH);
     this.player.health = this.player.maxHealth;
     this.player.speedScale = kind.speed;
     this.structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z), loot);
