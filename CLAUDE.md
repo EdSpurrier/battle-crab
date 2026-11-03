@@ -200,6 +200,9 @@ a round crab pushed out of turned boxes each frame (`unblock`), so a crab can hi
   Sprinting spends stamina (`Player.stamina`, 0..1: 7 s unladen × weightFactor, back in 5 s; at 0 the crab is
   winded until a third is back); the thin bar under the life bar, magenta when winded.
   The gait steps slowly with long strides (STEP_TRIGGER, STEP_SECONDS, STEP_LEAD in crab.ts).
+- A held trigger keeps firing at each weapon's reload: the cannon, the grenade launcher and the fireworks as well as
+  the guns. Held, the spiky ball runs itself: out as soon as it is home (SPIKE_AUTO_READY), wound in once it has lain a
+  moment (SPIKE_AUTO_DWELL), out again; a tap still fires or reels by hand.
 - Unlimited ammunition (settings, Game: on by default; `Arsenal.infinite`; Bullet Hell always).
 - The bommy knocker: held, it whirls its ball round the crab at shell height (spinning up over KNOCK_SPIN_UP to
   KNOCK_SPIN_MAX rad/s, the chain KNOCK_CHAIN × the pole's and never stretched), hitting what it sweeps through; let go,
