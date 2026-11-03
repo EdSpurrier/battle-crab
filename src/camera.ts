@@ -82,7 +82,19 @@ export class ThirdPersonCamera implements CameraLike {
 
   view(): Mat4 {
     const p = this.pivot();
-    return lookAt(this.eye(), [p[0], p[1] + this.aim, p[2]]);
+    const e = this.eye();
+    const s = this.shakeOffset;
+    return lookAt([e[0] + s[0], e[1] + s[1], e[2] + s[2]], [p[0] + s[0], p[1] + this.aim + s[1], p[2] + s[2]]);
+  }
+
+  /** A shake (a blast near by): how hard (units), eased away; the offset it gives the view this frame. */
+  private shaking = 0;
+  private shakeTime = 0;
+  private readonly shakeOffset: Vec3 = [0, 0, 0];
+
+  /** Shake the view by about `amount` units (the strongest wins; it dies away in about half a second). */
+  shake(amount: number): void {
+    this.shaking = Math.min(0.9, Math.max(this.shaking, amount));
   }
 
   /** The way the camera looks (unit): through the crosshair. */
@@ -138,6 +150,13 @@ export class ThirdPersonCamera implements CameraLike {
     this.target[1] += (this.follow[1] + this.height - this.target[1]) * k;
     this.target[2] += (this.follow[2] - this.target[2]) * k;
     this.aimed += (this.aimZoom - this.aimed) * (1 - Math.exp(-12 * dt));
+    this.shaking *= Math.exp(-6 * dt);
+    this.shakeTime += dt;
+    const t = this.shakeTime * 38;
+    const a = this.shaking < 0.005 ? 0 : this.shaking;
+    this.shakeOffset[0] = a * Math.sin(t) * Math.cos(t * 0.37);
+    this.shakeOffset[1] = a * 0.7 * Math.sin(t * 1.31 + 1);
+    this.shakeOffset[2] = a * Math.sin(t * 0.83 + 2);
     this.tilt = this.pitch;
     if (!this.groundHeight) {
       this.shown = this.distance;

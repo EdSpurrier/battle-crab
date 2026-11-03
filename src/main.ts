@@ -6,6 +6,7 @@ import { Enemy } from './enemy';
 import { GamepadInput } from './gamepad';
 import { buildGround } from './ground';
 import { World, wreckFx } from './impacts';
+import { debrisFor } from './debris';
 import { LifeBars } from './lifebars';
 import { Hell, hellBuild } from './hell';
 import { Waves } from './waves';
@@ -63,8 +64,14 @@ const props = new Props(renderer, (x, z) => ground.heightAt(x, z), map.props);
 props.attach(world, loot);
 player.blockers = world.obstacles;
 structure.owner = player;
-// A burst flings the loot lying about.
+// A burst flings the loot lying about, and shakes the view the nearer it is to the crab.
 world.blasts.push((at, r, s) => loot.blast(at, r, s));
+world.blasts.push((at, r, s) => {
+  const d = Math.hypot(at[0] - player.position[0], at[2] - player.position[2]);
+  camera.shake(Math.min(0.8, (s * 0.025 * r) / Math.max(1, d * 0.35)));
+});
+// The beach's flying debris (debris.ts): every hit throws chunks of what it hit.
+const debris = debrisFor(renderer, (x, z) => ground.heightAt(x, z));
 const arsenal = new Arsenal(renderer, structure, world, player, 1, HELL);
 structure.invulnerable = HELL;
 // Bullet Hell: a quicker crab, and every gun fires dead level.
@@ -135,6 +142,8 @@ look.panel.onToggle = (open) => {
 const gamepad = new GamepadInput();
 type Action = { kind: 'claws' } | { kind: 'weapon'; m: Mounted };
 const clawsWork = CLAWS[build.claws].works;
+/** The simple firing scheme (the default): the left button holds every weapon's trigger, the right button nips while held. */
+const simple = () => controls.fire === 'simple';
 function actions(): Action[] {
   return [...(clawsWork ? [{ kind: 'claws' } as Action] : []), ...structure.weapons.map((m): Action => ({ kind: 'weapon', m }))].slice(0, MAX_ACTIONS);
 }
@@ -159,11 +168,14 @@ function showActions(): void {
   actionBar.replaceChildren(
     ...list.map((a, i) => {
       const el = document.createElement('span');
-      el.className = `action${i === action ? ' on' : ''}`;
+      // Simple firing: every weapon is live on the left button, the claws on the right.
+      const lit = simple() ? true : i === action;
+      el.className = `action${lit ? ' on' : ''}`;
       const ammo = a.kind === 'weapon' ? arsenal.ammoOf(a.m) : Infinity;
       const left = ammo === Infinity ? '' : ` <i>${Math.ceil(ammo)}</i>`;
       const name = a.kind === 'weapon' ? Arsenal.nameOf(a.m) : CLAWS[build.claws].name;
-      el.innerHTML = `<b>${gamepad.connected ? PAD_LABELS[i] : i + 1}</b> ${name}${left}`;
+      const key = gamepad.connected ? PAD_LABELS[i] : simple() ? (a.kind === 'claws' ? 'RMB' : 'LMB') : String(i + 1);
+      el.innerHTML = `<b>${key}</b> ${name}${left}`;
       if (ammo === 0) el.classList.add('empty');
       return el;
     }),
@@ -209,13 +221,23 @@ function nip(): void {
   const b = player.crab.body;
   const reach = 2.4 * Math.sqrt(CLAWS[build.claws].scale);
   for (const o of world.inCone([b[12], b[13], b[14]], [b[8], 0, b[10]], reach, 0.7, player)) {
-    if (o instanceof Enemy) o.hurt(CLAWS[build.claws].damage);
+    if (o instanceof Enemy) {
+      o.hurt(CLAWS[build.claws].damage, 'nip', player.position);
+      const c = o.crab.body;
+      debris.burst([c[12], c[13] + 0.3, c[14]], 'shell', 4, 4, 0.08, [c[12] - b[12], 0.5, c[14] - b[14]], 0.6);
+    }
     else if (o && typeof o === 'object' && 'structure' in o && 'index' in o) (o as { structure: Structure; index: number }).structure.damage((o as { index: number }).index, CLAWS[build.claws].damage);
   }
 }
 
 /** Fire action slot `i` (a gamepad button): a weapon's trigger, or a nip every so often while held. */
 let nipCool = 0;
+let firingAll = false;
+let nipping = false;
+function fireAll(down: boolean): void {
+  firingAll = down;
+  for (const m of structure.weapons) arsenal.fire(m, down);
+}
 function fireAction(i: number, down: boolean): void {
   const a = actions()[i];
   if (!a) return;
@@ -268,6 +290,8 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keyup', (e) => keys.delete(e.code));
 window.addEventListener('blur', () => {
   keys.clear();
+  firingAll = false;
+  nipping = false;
   arsenal.releaseAll();
   camera.aimZoom = 0;
 });
@@ -279,12 +303,14 @@ window.addEventListener('blur', () => {
 const locked = () => document.pointerLockElement === canvas;
 const THIRD = 'mouse to look · 1-4 pick an action, left button fires, right button aims · WASD to walk · Shift to run · Space to jump · Tab for settings · C for topdown';
 const TOP = 'mouse to aim · 1-4 pick an action, left button fires, right button zooms · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person';
+const THIRD_SIMPLE = 'mouse to look · left button fires every weapon, right button nips · WASD to walk · Shift to run · Space to jump · Tab for settings · C for topdown';
+const TOP_SIMPLE = 'mouse to aim · left button fires every weapon, right button nips · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person';
 const PAD = 'gamepad: left stick moves, right stick faces, LB / RB / LT / RT fire the slots, press the left stick to run, A jumps';
 const HELL_TOP = 'mouse to aim · left button fires, right button fires the secondary · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person · power-ups drop where crabs crack';
 function showHint(): void {
   if (HELL && controls.topDown) hint.textContent = HELL_TOP;
-  else if (controls.topDown) hint.textContent = TOP;
-  else hint.textContent = `${THIRD} · ${locked() ? 'Esc to release the mouse' : 'click to capture the mouse'}`;
+  else if (controls.topDown) hint.textContent = simple() && !HELL ? TOP_SIMPLE : TOP;
+  else hint.textContent = `${simple() && !HELL ? THIRD_SIMPLE : THIRD} · ${locked() ? 'Esc to release the mouse' : 'click to capture the mouse'}`;
   if (gamepad.connected) hint.textContent += ` · ${PAD}`;
 }
 controls.onModeChange = (mode) => {
@@ -294,6 +320,12 @@ controls.onModeChange = (mode) => {
 };
 // The settings may have put a scheme in place already (a saved choice): show it.
 controls.onModeChange(controls.mode);
+controls.onFireChange = () => {
+  fireAll(false);
+  nipping = false;
+  showHint();
+  showActions();
+};
 function capture(e: Event): void {
   if (controls.topDown || locked() || overPanel(e) || (e.target instanceof Element && e.target.closest('a'))) return;
   const asked = canvas.requestPointerLock() as unknown;
@@ -312,22 +344,26 @@ window.addEventListener('mousedown', (e) => {
   if (overPanel(e) || (e.target instanceof Element && e.target.closest('a')) || !player.alive) return;
   if (e.button === 0) {
     if (hell) hell.firePrimary(true);
+    else if (simple()) fireAll(true);
     else if (actions()[action]?.kind === 'claws') nip();
     else arsenal.trigger(true);
   }
   if (e.button === 2) {
     if (hell) hell.fireSecondary(true);
+    else if (simple() && clawsWork) nipping = true;
     else camera.aimZoom = 1;
   }
 });
 window.addEventListener('mouseup', (e) => {
   if (e.button === 0) {
     if (hell) hell.firePrimary(false);
+    else if (simple()) fireAll(false);
     else arsenal.trigger(false);
   }
   if (e.button === 2) {
     if (hell) hell.fireSecondary(false);
-    else camera.aimZoom = 0;
+    nipping = false;
+    camera.aimZoom = 0;
   }
 });
 window.addEventListener('contextmenu', (e) => {
@@ -357,6 +393,15 @@ function frame(now: number): void {
   world.moving = [crabBox(player), ...structure.boxes(player.crab.body, player), ...live.map(crabBox), ...live.flatMap((e) => e.structure.boxes(e.crab.body, e)), ...corpses.map(crabBox)];
   const intent = controls.update(keys, player.position);
   nipCool = Math.max(0, nipCool - dt);
+  if (!hell && player.alive) {
+    if (nipping && nipCool <= 0) {
+      nip();
+      nipCool = 0.4;
+    }
+    // A weapon picked up while the button is down joins in.
+    if (firingAll) for (const m of structure.weapons) arsenal.fire(m, true);
+  }
+  debris.update(dt);
   // A gamepad joins in over the keys and the mouse: the left stick walks (in the camera's frame), the right
   // stick faces (top down: the aim marker goes a little way out that way and stays until the mouse moves;
   // 3rd person: it orbits the camera), the left stick pressed in runs, A jumps, LB / RB / LT / RT fire the slots.
@@ -393,6 +438,8 @@ function frame(now: number): void {
     // Cracked: the crab keels over, a burst of shell as it settles, a few seconds down, then back at the start, whole.
     if (deadFor === 0) {
       arsenal.releaseAll();
+      firingAll = false;
+      nipping = false;
       cracked.hidden = false;
       // The run is over: the waves back to stage one (and Bullet Hell's guns back to plain).
       const run = waves.reset();
@@ -404,6 +451,7 @@ function frame(now: number): void {
     if (was < 1.2 && deadFor >= 1.2) {
       const b = player.crab.body;
       wreckFx(renderer, [b[12], b[13] + 0.3, b[14]]);
+      debris.burst([b[12], b[13] + 0.3, b[14]], 'shell', 18, 6, 0.16);
     }
     cracked.innerHTML = `Cracked!<small>back on the beach in ${Math.ceil(3.5 - deadFor)}…</small>`;
     if (deadFor >= 3.5) {
@@ -518,4 +566,4 @@ function frame(now: number): void {
 }
 requestAnimationFrame(frame);
 // A handle on the game for the browser console (poking at the player, the enemies, the lights).
-(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera, loot, hell, waves, pickups, props };
+(window as unknown as { crab: unknown }).crab = { player, enemies, arsenal, structure, world, renderer, gamepad, controls, camera, loot, hell, waves, pickups, props, debris };

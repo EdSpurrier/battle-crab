@@ -1,9 +1,11 @@
-import { Mesh, MeshBuilder, box, material, multiply, rotationY, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
+import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { DAMAGE, type Combatant } from './combat';
 import { impactFx, type Hit, type Obstacle, type World } from './impacts';
 import { pieceType, type PieceKind } from './shell';
 import { isPushable, radialImpulse, withLength } from './physics';
-import { isPropRef } from './props';
+import { PROP_LOOKS, isPropRef } from './props';
+import { debrisFor, type DebrisStuff } from './debris';
+import type { HitKind } from './combat';
 import { CANNON_SPEED, GRENADE_SPEED, isPartRef, type Mounted, type Structure } from './structure';
 
 /**
@@ -117,9 +119,9 @@ const GUN_RANGE = 80;
 /** How many shots (or seconds of flame) a weapon carries. */
 export const AMMO: Record<PieceKind, number> = { plank: 0, beam: 0, joint: 0, cannon: 10, gatling: 300, machinegun: 150, flamethrower: 12, knocker: Infinity, spikeball: Infinity, fireworks: 18, grenade: 14 };
 /** A grenade: its fuse, the blast it makes, how much of its bounce it keeps. */
-const GRENADE_FUSE = 1.7;
-const GRENADE_BLAST = 3.2;
-const GRENADE_BOUNCE = 0.45;
+const GRENADE_FUSE = 1.9;
+const GRENADE_BLAST = 3.6;
+const GRENADE_BOUNCE = 0.62;
 /** The spiky ball: how fast it leaves, how far its chain reaches, how fast it is reeled in. */
 const SPIKE_SPEED = 22;
 const CHAIN_REACH = 14;
@@ -303,6 +305,7 @@ export class Arsenal {
     for (let i = this.pending.length - 1; i >= 0; i--) {
       if (this.pending[i].at <= this.clock) {
         const h = this.pending[i];
+        this.cause('bullet', [h.hit.point[0] - h.dir[0] * 4, h.hit.point[1] - h.dir[1] * 4, h.hit.point[2] - h.dir[2] * 4]);
         this.land(h.hit, h.size, h.damage, withLength(h.dir, BULLET_NUDGE * h.size));
         if (h.blast > 0) this.splash(h.hit.point, h.blast, h.damage * 0.6);
         this.pending.splice(i, 1);
@@ -366,7 +369,7 @@ export class Arsenal {
             w.kick = 0.3;
             this.flaming = { at: [muzzle[0] + facing[0] * 3, muzzle[1] + facing[1] * 3 + 0.5, muzzle[2] + facing[2] * 3], ttl: 0.1 };
             for (const o of this.world.inCone(muzzle, facing, 6.5, 0.36, this.owner, this.structure.flatAim)) {
-              if (isCombatant(o)) o.hurt(DAMAGE.flamethrower * dt * this.damageScale);
+              if (isCombatant(o)) o.hurt(DAMAGE.flamethrower * dt * this.damageScale, 'flame', muzzle);
               else if (isPartRef(o)) {
                 o.structure.damage(o.index, DAMAGE.flamethrower * dt * this.damageScale);
                 o.structure.ignite(o.index);
@@ -438,7 +441,9 @@ export class Arsenal {
       const next: Vec3 = [g.pos[0] + g.vel[0] * dt, g.pos[1] + g.vel[1] * dt, g.pos[2] + g.vel[2] * dt];
       const hit = this.world.segment(g.pos, next, this.owner);
       let burst = g.fuse <= 0;
-      if (hit && hit.owner !== undefined) burst = true;
+      // Straight onto a crab (or a piece of one): it goes off at once. Anything else it bounces off.
+      const onCrab = !!hit && (isCombatant(hit.owner) || isPartRef(hit.owner));
+      if (onCrab) burst = true;
       else if (hit) {
         // Off the sand or a rock: the bounce keeps some of the speed, and a slow one rolls to a stop.
         const n = hit.normal;
@@ -446,6 +451,8 @@ export class Arsenal {
         g.vel = [(g.vel[0] - 2 * vn * n[0]) * GRENADE_BOUNCE, (g.vel[1] - 2 * vn * n[1]) * GRENADE_BOUNCE, (g.vel[2] - 2 * vn * n[2]) * GRENADE_BOUNCE];
         g.pos = [hit.point[0] + n[0] * 0.14, hit.point[1] + n[1] * 0.14, hit.point[2] + n[2] * 0.14];
         if (Math.abs(vn) > 2) impactFx(this.renderer, hit, 0.4);
+        // A bounce sets it tumbling faster.
+        g.spin += (Math.random() - 0.5) * 4;
       } else g.pos = next;
       const floor = this.world.heightAt(g.pos[0], g.pos[2]) + 0.13;
       if (g.pos[1] < floor) {
@@ -458,8 +465,8 @@ export class Arsenal {
       if (Math.random() < dt * (6 + (GRENADE_FUSE - g.fuse) * 10)) this.renderer.particles.emit(g.pos[0], g.pos[1] + 0.12, g.pos[2], { count: 1, color: [2, 0.5, 0.3], colorTo: [1, 0.2, 0.1], speed: 0.2, life: 0.12, size: 0.14, fadeCurve: 'down', shape: 'disc' });
       if (burst) {
         const b = g.boost;
-        this.splash(g.pos, GRENADE_BLAST * Math.sqrt(b.size) + b.blast, DAMAGE.grenade * b.damage);
-        if (hit && hit.owner !== undefined) this.hurtOwner(hit.owner, DAMAGE.grenade * b.damage * 0.5);
+        this.splash(g.pos, GRENADE_BLAST * Math.sqrt(b.size) + b.blast, DAMAGE.grenade * b.damage, true);
+        if (hit && onCrab) this.hurtOwner(hit.owner, DAMAGE.grenade * b.damage * 0.5);
         // A cluster: bomblets scatter from the burst, each a smaller grenade on a short fuse.
         for (let k = 0; k < b.cluster; k++) {
           const a = Math.random() * Math.PI * 2;
@@ -476,10 +483,11 @@ export class Arsenal {
         this.grenades.splice(i, 1);
         continue;
       }
+      // The pill points the way it flies (its yaw) and turns end over end.
       const m = g.instance.model as Float32Array;
       placeBall(m, g.pos, g.boost.size);
-      multiply(m, rotationY(g.spin, this.tmpB), this.tmpA);
-      m.set(this.tmpA);
+      multiply(m, rotationY(Math.atan2(g.vel[0], g.vel[2]), this.tmpB), this.tmpA);
+      multiply(this.tmpA, rotationX(g.spin, this.tmpB), m);
     }
   }
 
@@ -564,6 +572,7 @@ export class Arsenal {
       const key = o.owner;
       if (this.knockHits.has(key)) continue;
       this.knockHits.set(key, this.clock + 0.5);
+      this.cause('blow', [m.muzzle[0] - vel[0], m.muzzle[1], m.muzzle[2] - vel[2]]);
       this.hurtBox(o, DAMAGE.knocker * Math.min(1, speed / KNOCK_FULL_SPEED), 3, [vel[0] * KNOCK_PUNCH, Math.abs(vel[1]) * KNOCK_PUNCH * 0.5 + 1, vel[2] * KNOCK_PUNCH]);
       f.rope.slowEnd(0.45);
     }
@@ -602,6 +611,7 @@ export class Arsenal {
       const hit = this.world.segment(t.pos, next, this.owner);
       if (hit) {
         // The heavy ball carries its speed into whatever it hits.
+        this.cause('blow', t.pos);
         this.land(hit, 2, DAMAGE.spikeball, [t.vel[0] * SPIKE_PUNCH, Math.max(1.5, t.vel[1] * SPIKE_PUNCH), t.vel[2] * SPIKE_PUNCH]);
         t.pos = [hit.point[0] + hit.normal[0] * 0.4, hit.point[1] + hit.normal[1] * 0.4, hit.point[2] + hit.normal[2] * 0.4];
         t.phase = 'landed';
@@ -650,6 +660,7 @@ export class Arsenal {
       if (t.hitCool <= 0) {
         const hit = this.world.segment(was, t.pos, this.owner);
         if (hit && hit.owner !== undefined) {
+          this.cause('blow', was);
           this.land(hit, 1.5, DAMAGE.spikeball * 0.4, withLength([t.pos[0] - was[0], 0.3, t.pos[2] - was[2]], 4));
           t.hitCool = 0.4;
         }
@@ -696,6 +707,7 @@ export class Arsenal {
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 6, color: [1, 1, 0.9], colorTo: r.color, speed: 0.5, life: 0.12, size: 0.8, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 46, color: r.color, colorTo: r.colorTo, speed: 6, cone: Math.PI, life: 0.8, size: 0.09, gravity: 3, drag: 1.5, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark', stretch: 2 });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 24, color: r.colorTo, colorTo: [1, 1, 1], speed: 2.5, cone: Math.PI, life: 1.6, size: 0.06, gravity: 4, drag: 0.8, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark' });
+        this.cause('blast', r.pos);
         for (const o of this.world.near(r.pos, 2.2, this.owner)) this.hurtBox(o, DAMAGE.fireworks, 1, radialImpulse(r.pos, o.center, 2.2, 3.5) ?? undefined);
         this.rockets.splice(i, 1);
       }
@@ -716,8 +728,11 @@ export class Arsenal {
           // The ball punches what it hits along its flight, and its landing shoves everything round it back.
           const punch = withLength([b.vel[0], 0, b.vel[2]], CANNON_PUNCH * b.size);
           punch[1] = 3.5 * b.size;
+          this.cause('blow', b.pos);
           this.land(hit, 4 * b.size, DAMAGE.cannon * b.damage, punch);
-          this.pushAt(hit.point, CANNON_PUSH_RADIUS * Math.sqrt(b.size), CANNON_PUSH * b.size, hit.self ?? hit.owner);
+          const reach = CANNON_PUSH_RADIUS * Math.sqrt(b.size);
+          this.dustRing(hit.point, reach);
+          this.pushAt(hit.point, reach, CANNON_PUSH * b.size, hit.self ?? hit.owner);
           if (b.blast > 0) this.splash(hit.point, b.blast, DAMAGE.cannon * b.damage * 0.5);
         }
         const list = this.renderer.instances;
@@ -740,14 +755,58 @@ export class Arsenal {
   }
 
   /** A blast round `at`: everything within `radius` takes `damage`, with a boom to match. */
-  private splash(at: Vec3, radius: number, damage: number): void {
+  /**
+   * A blast round `at`: everything within `radius` takes `damage` and is thrown back. `big` (a grenade): a
+   * proper explosion, a white-hot flash, a rolling fireball, a shock ring of dust out to the blast's reach,
+   * a column of black smoke, sparks, clods of sand and embers flung out, and a hard light; else a smaller pop.
+   */
+  private splash(at: Vec3, radius: number, damage: number, big = false): void {
+    this.cause('blast', at);
     for (const o of this.world.near(at, radius, this.owner, this.structure.flatAim)) this.hurtBox(o, damage, 1);
     this.pushAt(at, radius * 1.3, 2.2 * radius);
     const p = this.renderer.particles;
-    p.emit(at[0], at[1] + 0.2, at[2], { count: 4, color: [3, 2.2, 1], colorTo: [2, 0.6, 0.1], speed: 0.3, life: 0.14, size: radius * 0.9, fadeCurve: 'down', sizeCurve: 'up', shape: 'disc' });
-    p.emit(at[0], at[1] + 0.2, at[2], { count: Math.round(10 * radius), color: [0.5, 0.45, 0.4], colorTo: [0.25, 0.25, 0.25], speed: radius * 1.5, up: 1, life: 1 + radius * 0.2, size: 0.3 + radius * 0.12, drag: 1.5, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
-    p.emit(at[0], at[1] + 0.2, at[2], { count: Math.round(12 * radius), color: [1, 0.9, 0.5], colorTo: [1, 0.4, 0.1], speed: 4 + radius * 2, up: 2, life: 0.5, size: 0.06, gravity: 12, stretch: 4, fadeCurve: 'down', shape: 'spark' });
-    this.flash(at, [1, 0.7, 0.3], 0.15, 3 + radius * 1.5, 25 + radius * 8);
+    const [x, y, z] = [at[0], at[1] + 0.2, at[2]];
+    if (!big) {
+      p.emit(x, y, z, { count: 4, color: [3, 2.2, 1], colorTo: [2, 0.6, 0.1], speed: 0.3, life: 0.14, size: radius * 0.9, fadeCurve: 'down', sizeCurve: 'up', shape: 'disc' });
+      p.emit(x, y, z, { count: Math.round(10 * radius), color: [0.5, 0.45, 0.4], colorTo: [0.25, 0.25, 0.25], speed: radius * 1.5, up: 1, life: 1 + radius * 0.2, size: 0.3 + radius * 0.12, drag: 1.5, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+      p.emit(x, y, z, { count: Math.round(12 * radius), color: [1, 0.9, 0.5], colorTo: [1, 0.4, 0.1], speed: 4 + radius * 2, up: 2, life: 0.5, size: 0.06, gravity: 12, stretch: 4, fadeCurve: 'down', shape: 'spark' });
+      this.flash(at, [1, 0.7, 0.3], 0.15, 3 + radius * 1.5, 25 + radius * 8);
+      return;
+    }
+    const r = radius;
+    // The flash: a white-hot ball the size of the blast, gone in a blink.
+    p.emit(x, y + 0.3, z, { count: 6, color: [8, 7, 5], colorTo: [4, 1.6, 0.3], speed: 0.4, life: 0.16, size: r * 1.3, fadeCurve: 'down', sizeCurve: 'up', shape: 'disc' });
+    // The fireball: rolling, rising, orange to dull red to smoke.
+    p.emit(x, y + 0.4, z, { count: Math.round(28 * r), color: [5, 2.6, 0.7], colorTo: [1.2, 0.2, 0.04], speed: r * 1.6, up: 2.2, life: 0.75, size: 0.55 + r * 0.18, gravity: -4, drag: 2.4, fadeCurve: 'ease-out', sizeCurve: 'up', shape: 'smoke' });
+    // Black smoke climbing in a column, and grey smoke rolling out low.
+    p.emit(x, y + 0.6, z, { count: Math.round(14 * r), color: [0.12, 0.11, 0.1], colorTo: [0.3, 0.29, 0.28], speed: r * 0.5, up: 3.5, life: 3.2, size: 0.8 + r * 0.2, gravity: -1.2, drag: 0.9, alpha: 0.75, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+    // The shock ring: dust racing out flat to the edge of the blast.
+    this.dustRing(at, r, 1.2);
+    // Sparks and burning bits flung high.
+    p.emit(x, y, z, { count: Math.round(30 * r), color: [5, 3.5, 1.2], colorTo: [2, 0.5, 0.05], speed: 8 + r * 3, up: 4, life: 0.9, size: 0.07, gravity: 14, stretch: 5, fadeCurve: 'down', shape: 'spark' });
+    const debris = debrisFor(this.renderer);
+    debris.burst([x, y, z], 'sand', Math.round(6 + 3 * r), 7 + r, 0.11);
+    debris.burst([x, y + 0.2, z], 'ember', Math.round(4 + 2 * r), 9 + r, 0.07);
+    this.flash(at, [1, 0.65, 0.25], 0.32, 6 + r * 2.5, 70 + r * 18);
+  }
+
+  /** A ring of dust thrown out flat from `at` to `radius` (what a heavy landing or a shock wave reaches), and a puff over the middle. */
+  private dustRing(at: Vec3, radius: number, thick = 1): void {
+    const p = this.renderer.particles;
+    const n = 36;
+    const drag = 2.6;
+    // A particle under drag goes speed / drag before it stops: start them fast enough to end at the edge.
+    const speed = radius * drag * 1.05;
+    const y = at[1] + 0.15;
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.1;
+      const dir: Vec3 = [Math.cos(a), 0.05, Math.sin(a)];
+      p.emit(at[0], y, at[2], { count: Math.round(2 * thick), color: [0.52, 0.45, 0.33], colorTo: [0.6, 0.54, 0.42], speed, dir, cone: 0.05, life: 1.5, size: 0.45 + radius * 0.07, drag, alpha: 0.95, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+    }
+    // A low dome of dust over the middle, and sand thrown up and falling back.
+    p.emit(at[0], y, at[2], { count: Math.round(10 * thick + radius * 4), color: [0.6, 0.53, 0.4], colorTo: [0.66, 0.6, 0.47], speed: radius * 0.9, up: 1.6, life: 1.8, size: 0.5 + radius * 0.12, gravity: -0.2, drag: 1.4, alpha: 0.7, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+    p.emit(at[0], y, at[2], { count: Math.round(20 + radius * 8), color: [0.66, 0.56, 0.38], colorTo: [0.52, 0.44, 0.3], speed: 5 + radius, up: 5, life: 1.1, size: 0.06, gravity: 16, shape: 'disc' });
+    debrisFor(this.renderer).burst([at[0], y, at[2]], 'sand', Math.round(4 + radius * 1.5), 5 + radius * 0.8, 0.09);
   }
 
   // ---------- hits
@@ -759,10 +818,36 @@ export class Arsenal {
     if (impulse) this.shove(hit.self ?? hit.owner, impulse);
   }
 
+  /** What is hitting now (set where each kind of hit begins): the hurt passes it on, the debris flies away from `hitFrom`. */
+  private hitKind: HitKind = 'bullet';
+  private hitFrom: Vec3 | null = null;
+  private cause(kind: HitKind, from: Vec3): void {
+    this.hitKind = kind;
+    this.hitFrom = [from[0], from[1], from[2]];
+  }
+
   private hurtOwner(owner: unknown, damage: number, at?: Vec3): void {
-    if (isCombatant(owner)) owner.hurt(damage * this.damageScale);
-    else if (isPartRef(owner)) owner.structure.damage(owner.index, damage * this.damageScale);
-    else if (isPropRef(owner)) owner.props.damage(owner.index, damage * this.damageScale, at);
+    let stuff: DebrisStuff | null = null;
+    if (isCombatant(owner)) {
+      if (owner.alive) stuff = 'shell';
+      owner.hurt(damage * this.damageScale, this.hitKind, this.hitFrom ?? undefined);
+    } else if (isPartRef(owner)) {
+      stuff = owner.structure.stuffOf(owner.index);
+      owner.structure.damage(owner.index, damage * this.damageScale);
+    } else if (isPropRef(owner)) {
+      stuff = PROP_LOOKS[owner.props.defs[owner.index]?.kind ?? 'rock'].stuff ?? null;
+      owner.props.damage(owner.index, damage * this.damageScale, at);
+    }
+    if (stuff && at) this.chips(at, stuff, damage);
+  }
+
+  /** Chunks off what was hit, by how hard: flung away from where the hit came from, and up. */
+  private chips(at: Vec3, stuff: DebrisStuff, damage: number): void {
+    const n = Math.min(16, Math.round(1 + damage * 0.22));
+    if (n <= 0) return;
+    const from = this.hitFrom;
+    const dir: Vec3 | undefined = from ? [at[0] - from[0], Math.max(0.4, at[1] - from[1]), at[2] - from[2]] : undefined;
+    debrisFor(this.renderer).burst(at, stuff, n, 4 + Math.min(9, damage * 0.12), 0.07 + Math.min(0.14, damage * 0.002), dir, 0.7);
   }
 
   /** Push whoever `target` is (a crab, or the crab whose piece it is) by `impulse`. */
@@ -823,26 +908,45 @@ export class Arsenal {
 }
 
 /** A grenade: a dark green egg with a brass cap and a band. */
+/** A grenade: a pill (a capsule along +z), olive with a brass band round its middle and dark caps. */
 function grenadeShell(): MeshData {
-  const parts = [sphere(0.13, [0.1, 0.16, 0.08], 10, 7), box(-0.04, 0.1, -0.04, 0.04, 0.17, 0.04, [0.55, 0.4, 0.12]), box(-0.135, -0.02, -0.135, 0.135, 0.02, 0.135, [0.2, 0.2, 0.2])];
-  let nv = 0;
-  let ni = 0;
-  for (const p of parts) {
-    nv += p.vertices.length;
-    ni += p.indices.length;
+  const r = 0.12;
+  const half = 0.1;
+  const segs = 12;
+  const rings = 10;
+  const b = new MeshBuilder();
+  // Latitude from one cap's tip to the other's; the middle stretched by `half` either way along z.
+  const at = (i: number, j: number, off: number): Vec => {
+    const th = (i / segs) * Math.PI * 2;
+    const ph = -Math.PI / 2 + (j / rings) * Math.PI;
+    return [Math.cos(th) * Math.cos(ph) * r, Math.sin(th) * Math.cos(ph) * r, Math.sin(ph) * r + off];
+  };
+  const OLIVE: Vec = [0.16, 0.22, 0.09];
+  const CAP: Vec = [0.08, 0.09, 0.07];
+  const BAND: Vec = [0.75, 0.55, 0.15];
+  // Two half-spheres, the back one pushed back by half and the front one forward.
+  for (let j = 0; j < rings; j++) {
+    const off = j < rings / 2 ? -half : half;
+    const color = j === 0 || j === rings - 1 ? CAP : OLIVE;
+    for (let i = 0; i < segs; i++) b.quad(at(i, j, off), at(i + 1, j, off), at(i + 1, j + 1, off), at(i, j + 1, off), color);
   }
-  const vertices = new Float32Array(nv);
-  const indices = new Uint32Array(ni);
-  let vo = 0;
-  let io = 0;
-  for (const p of parts) {
-    vertices.set(p.vertices, vo);
-    const base = vo / 11;
-    for (let i = 0; i < p.indices.length; i++) indices[io + i] = p.indices[i] + base;
-    vo += p.vertices.length;
-    io += p.indices.length;
+  // The straight middle: from the equator ring of one cap to the other's.
+  const mid = (i: number, z: number): Vec => {
+    const th = (i / segs) * Math.PI * 2;
+    return [Math.cos(th) * r, Math.sin(th) * r, z];
+  };
+  const bandW = 0.035;
+  for (let i = 0; i < segs; i++) {
+    b.quad(mid(i, -half), mid(i + 1, -half), mid(i + 1, -bandW), mid(i, -bandW), OLIVE);
+    const br = 1.06;
+    const bm = (k: number, z: number): Vec => {
+      const v = mid(k, z);
+      return [v[0] * br, v[1] * br, z];
+    };
+    b.quad(bm(i, -bandW), bm(i + 1, -bandW), bm(i + 1, bandW), bm(i, bandW), BAND);
+    b.quad(mid(i, bandW), mid(i + 1, bandW), mid(i + 1, half), mid(i, half), OLIVE);
   }
-  return { vertices, indices };
+  return b.build();
 }
 
 /** A cannonball's matrix: at `at`, `size` times the plain ball. */

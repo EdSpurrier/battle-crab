@@ -3,6 +3,9 @@ import type { Crab } from './crab';
 import type { Obstacle } from './impacts';
 import type { Pushable } from './physics';
 
+/** What a hit was (a killing one picks the death: see Crab.collapse): a bullet, a heavy blow (cannonball, knocker, spiky ball), a burst, flame, a nip. */
+export type HitKind = 'bullet' | 'blow' | 'blast' | 'flame' | 'nip';
+
 /** Anyone who can be hit: the player, an opponent. */
 export interface Combatant extends Pushable {
   readonly crab: Crab;
@@ -10,8 +13,8 @@ export interface Combatant extends Pushable {
   health: number;
   readonly maxHealth: number;
   readonly alive: boolean;
-  /** Take `amount` off the health; what happens at zero is the owner's business. */
-  hurt(amount: number): void;
+  /** Take `amount` off the health (a `kind` of hit from `from`); what happens at zero is the owner's business. */
+  hurt(amount: number, kind?: HitKind, from?: Vec3): void;
 }
 
 /** How much each weapon takes off per hit (the flame per second of contact; the knocker at full swing speed; the claws by their kind, see shell.ts CLAWS). */

@@ -16,6 +16,14 @@ import { pickGround } from './pick';
 export type ControlMode = '3rd person' | 'topdown';
 export const CONTROL_MODES: ControlMode[] = ['3rd person', 'topdown'];
 
+/**
+ * How the mouse fires (outside Bullet Hell): `simple` (the default): the left button fires every weapon on
+ * the shell at once, the right button nips with the claws; `action slots`: 1-4 choose one action, the left
+ * button fires it, the right button aims down the barrel.
+ */
+export type FireScheme = 'simple' | 'action slots';
+export const FIRE_SCHEMES: FireScheme[] = ['simple', 'action slots'];
+
 interface CameraSnapshot {
   ortho: boolean;
   pitch: number;
@@ -46,6 +54,14 @@ export interface Intent {
 
 export class Controls {
   mode: ControlMode = '3rd person';
+  fire: FireScheme = 'simple';
+  /** Called after the fire scheme changes (the HUD). */
+  onFireChange: ((fire: FireScheme) => void) | null = null;
+
+  setFire(fire: FireScheme): void {
+    this.fire = fire;
+    this.onFireChange?.(fire);
+  }
   /** Top down: the ground point under the mouse (null: none yet, or the sky). */
   aim: Vec3 | null = null;
   /** The camera's tilt and zoom in top down (settings). */
