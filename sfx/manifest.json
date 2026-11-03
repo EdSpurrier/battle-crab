@@ -1,0 +1,245 @@
+{
+ "cannon.fire": {
+  "volume": 0.9,
+  "files": [
+   "cannon.fire-1.wav",
+   "cannon.fire-2.wav"
+  ]
+ },
+ "cannon.land": {
+  "volume": 0.9,
+  "files": [
+   "cannon.land-1.wav",
+   "cannon.land-2.wav",
+   "cannon.land-3.wav"
+  ]
+ },
+ "machinegun.fire": {
+  "volume": 0.35,
+  "files": [
+   "machinegun.fire-1.wav",
+   "machinegun.fire-2.wav",
+   "machinegun.fire-3.wav",
+   "machinegun.fire-4.wav",
+   "machinegun.fire-5.wav"
+  ]
+ },
+ "gatling.fire": {
+  "volume": 0.28,
+  "files": [
+   "gatling.fire-1.wav",
+   "gatling.fire-2.wav",
+   "gatling.fire-3.wav"
+  ]
+ },
+ "flame.loop": {
+  "volume": 0.6,
+  "files": [
+   "flame.loop-1.wav"
+  ]
+ },
+ "grenade.fire": {
+  "volume": 0.7,
+  "files": [
+   "grenade.fire-1.wav",
+   "grenade.fire-2.wav",
+   "grenade.fire-3.wav"
+  ]
+ },
+ "grenade.bounce": {
+  "volume": 0.4,
+  "files": [
+   "grenade.bounce-1.wav",
+   "grenade.bounce-2.wav"
+  ]
+ },
+ "explosion": {
+  "volume": 1,
+  "files": [
+   "explosion-1.wav",
+   "explosion-2.wav",
+   "explosion-3.wav"
+  ]
+ },
+ "fireworks.fire": {
+  "volume": 0.6,
+  "files": [
+   "fireworks.fire-1.wav"
+  ]
+ },
+ "fireworks.pop": {
+  "volume": 0.45,
+  "files": [
+   "fireworks.pop-1.wav",
+   "fireworks.pop-2.wav",
+   "fireworks.pop-3.wav",
+   "fireworks.pop-4.wav"
+  ]
+ },
+ "spike.fire": {
+  "volume": 0.75,
+  "files": [
+   "spike.fire-1.wav",
+   "spike.fire-2.wav"
+  ]
+ },
+ "chain.reel": {
+  "volume": 0.5,
+  "files": [
+   "chain.reel-1.wav"
+  ]
+ },
+ "chain.rattle": {
+  "volume": 0.5,
+  "files": [
+   "chain.rattle-1.wav",
+   "chain.rattle-2.wav",
+   "chain.rattle-3.wav"
+  ]
+ },
+ "whoosh": {
+  "volume": 0.45,
+  "files": [
+   "whoosh-1.wav",
+   "whoosh-2.wav",
+   "whoosh-3.wav"
+  ]
+ },
+ "knock.hit": {
+  "volume": 0.8,
+  "files": [
+   "knock.hit-1.wav",
+   "knock.hit-2.wav"
+  ]
+ },
+ "hit.shell": {
+  "volume": 0.45,
+  "files": [
+   "hit.shell-1.wav",
+   "hit.shell-2.wav",
+   "hit.shell-3.wav",
+   "hit.shell-4.wav",
+   "hit.shell-5.wav"
+  ]
+ },
+ "hit.metal": {
+  "volume": 0.4,
+  "files": [
+   "hit.metal-1.wav",
+   "hit.metal-2.wav",
+   "hit.metal-3.wav"
+  ]
+ },
+ "hit.wood": {
+  "volume": 0.45,
+  "files": [
+   "hit.wood-1.wav",
+   "hit.wood-2.wav",
+   "hit.wood-3.wav"
+  ]
+ },
+ "hit.stone": {
+  "volume": 0.4,
+  "files": [
+   "hit.stone-1.wav",
+   "hit.stone-2.wav",
+   "hit.stone-3.wav"
+  ]
+ },
+ "break.wood": {
+  "volume": 0.8,
+  "files": [
+   "break.wood-1.wav",
+   "break.wood-2.wav",
+   "break.wood-3.wav",
+   "break.wood-4.wav"
+  ]
+ },
+ "break.metal": {
+  "volume": 0.8,
+  "files": [
+   "break.metal-1.wav",
+   "break.metal-2.wav",
+   "break.metal-3.wav"
+  ]
+ },
+ "break.shell": {
+  "volume": 1,
+  "files": [
+   "break.shell-1.wav",
+   "break.shell-2.wav",
+   "break.shell-3.wav"
+  ]
+ },
+ "nip": {
+  "volume": 0.6,
+  "files": [
+   "nip-1.wav",
+   "nip-2.wav",
+   "nip-3.wav"
+  ]
+ },
+ "jump": {
+  "volume": 0.3,
+  "files": [
+   "jump-1.wav",
+   "jump-2.wav"
+  ]
+ },
+ "pickup.weapon": {
+  "volume": 0.7,
+  "files": [
+   "pickup.weapon-1.wav",
+   "pickup.weapon-2.wav"
+  ]
+ },
+ "pickup.ammo": {
+  "volume": 0.7,
+  "files": [
+   "pickup.ammo-1.wav",
+   "pickup.ammo-2.wav"
+  ]
+ },
+ "pickup.health": {
+  "volume": 0.7,
+  "files": [
+   "pickup.health-1.wav"
+  ]
+ },
+ "pickup.star": {
+  "volume": 0.7,
+  "files": [
+   "pickup.star-1.wav"
+  ]
+ },
+ "pickup.power": {
+  "volume": 0.7,
+  "files": [
+   "pickup.power-1.wav"
+  ]
+ },
+ "shot.off": {
+  "volume": 0.7,
+  "files": [
+   "shot.off-1.wav"
+  ]
+ },
+ "stage": {
+  "volume": 0.6,
+  "files": [
+   "stage-1.wav"
+  ]
+ },
+ "cracked": {
+  "volume": 0.6,
+  "files": [
+   "cracked-1.wav"
+  ]
+ },
+ "ambience.sea": {
+  "volume": 0.35,
+  "files": [
+   "ambience.sea-1.wav"
+  ]
+ }
+}
