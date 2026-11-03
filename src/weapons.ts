@@ -80,8 +80,9 @@ interface Tether {
   hitCool: number;
 }
 
-/** The knocker's chain and ball. */
+/** The knocker's chain and ball; `drawn` is how far the whirl has built (0..1), `angle` where it is round the ring. */
 interface Flail {
+  angle: number;
   rope: Rope;
   ball: Instance;
   links: Instance[];
@@ -128,9 +129,19 @@ const CHAIN_REACH = 14;
 /** How fast the drum winds the chain in (units of chain a second); the ball is dragged along on its end. */
 const WINCH_SPEED = 8;
 /** The knocker: links in its chain, how long hauling it right back takes, the swing a full haul gives on release, how fast the ball must go to hurt, the speed at which it does all it can. */
-const KNOCK_LINKS = 12;
-const KNOCK_DRAW_SECONDS = 0.5;
-const KNOCK_RELEASE = 11;
+const KNOCK_LINKS = 14;
+/**
+ * Held, the knocker whirls its ball round the crab: the ball is pulled round a circle about the ring,
+ * a little below it, the spin building over KNOCK_SPIN_UP seconds from KNOCK_SPIN_MIN to KNOCK_SPIN_MAX
+ * radians a second; let go, the ball flies on round on its chain and swings to rest. The chain is
+ * KNOCK_CHAIN times the pole's length.
+ */
+const KNOCK_SPIN_UP = 0.8;
+const KNOCK_SPIN_MIN = 4;
+const KNOCK_SPIN_MAX = 11;
+const KNOCK_CHAIN = 1.6;
+/** The whirl sweeps this high over the sand (through the crabs round about, not over their heads). */
+const KNOCK_SWEEP_HEIGHT = 1.15;
 const KNOCK_MIN_SPEED = 3.5;
 const KNOCK_FULL_SPEED = 11;
 /**
@@ -200,7 +211,7 @@ export class Arsenal {
   private readonly ballMaterial = material({ roughness: 0.5, metallic: 0.5 });
 
   /** Who fires: their own box and pieces are never hit. `damageScale` softens an opponent's guns; `infinite` ammo for them too. */
-  constructor(private readonly renderer: Renderer, public structure: Structure, private readonly world: World, private readonly owner: unknown, private readonly damageScale = 1, private readonly infinite = false) {
+  constructor(private readonly renderer: Renderer, public structure: Structure, private readonly world: World, private readonly owner: unknown, private readonly damageScale = 1, public infinite = false) {
     this.ballMesh = new Mesh(renderer.gl, sphere(0.15, BALL));
     this.spikeMesh = new Mesh(renderer.gl, spikedBall(0.4, SPIKE));
     this.knockerMesh = new Mesh(renderer.gl, spikedBall(0.36, BALL));
@@ -531,33 +542,49 @@ export class Arsenal {
    * swings itself out under gravity. Whatever the ball meets at speed takes a blow.
    */
   private swingKnocker(m: Mounted, dt: number, holding: boolean): void {
-    const L = m.chainLength;
+    const L = m.chainLength * KNOCK_CHAIN;
     const anchor = m.anchor;
     let f = this.flails.get(m);
     if (!f) {
-      f = { rope: new Rope(KNOCK_LINKS, L / KNOCK_LINKS, anchor, [anchor[0], anchor[1] - L, anchor[2]]), ball: { mesh: this.knockerMesh, model: new Float32Array(16), material: this.ballMaterial }, links: this.makeLinks(KNOCK_LINKS), drawn: 0 };
+      f = { rope: new Rope(KNOCK_LINKS, L / KNOCK_LINKS, anchor, [anchor[0], anchor[1] - L, anchor[2]]), ball: { mesh: this.knockerMesh, model: new Float32Array(16), material: this.ballMaterial }, links: this.makeLinks(KNOCK_LINKS), drawn: 0, angle: 0 };
       this.renderer.instances.push(f.ball);
       this.flails.set(m, f);
     }
-    const fwd = m.direction;
     const ball = f.rope.end;
     let pull: Vec3 | null = null;
     let endDrag = 0.5;
     if (holding) {
-      // Hauled back: a stiff pull toward a point behind and below the ring, damped hard so it hangs there.
-      f.drawn = Math.min(1, f.drawn + dt / KNOCK_DRAW_SECONDS);
-      const back = 0.3 + 0.6 * f.drawn;
-      const target: Vec3 = [anchor[0] - fwd[0] * L * back, anchor[1] - L * (1 - back * back) * 0.8, anchor[2] - fwd[2] * L * back];
-      pull = [(target[0] - ball[0]) * 90, (target[1] - ball[1]) * 90, (target[2] - ball[2]) * 90];
-      endDrag = 7;
+      // Whirling: the spin builds; the ball is pulled hard toward a point going round the ring (starting from
+      // wherever the ball is now), a little below it, so it sweeps round the crab at the chain's length.
+      if (f.drawn === 0) f.angle = Math.atan2(ball[2] - anchor[2], ball[0] - anchor[0]);
+      f.drawn = Math.min(1, f.drawn + dt / KNOCK_SPIN_UP);
+      f.angle += (KNOCK_SPIN_MIN + (KNOCK_SPIN_MAX - KNOCK_SPIN_MIN) * f.drawn) * dt;
+      // Down at the height of a crab's shell, as far out as the chain lets it reach from there.
+      const y = Math.min(anchor[1] - 0.3, this.world.heightAt(anchor[0], anchor[2]) + KNOCK_SWEEP_HEIGHT);
+      const dy = anchor[1] - y;
+      const r = Math.sqrt(Math.max(0.25, (L * 0.97) ** 2 - dy * dy));
+      const target: Vec3 = [anchor[0] + Math.cos(f.angle) * r, y, anchor[2] + Math.sin(f.angle) * r];
+      pull = [(target[0] - ball[0]) * 160, (target[1] - ball[1]) * 160 + GRAVITY, (target[2] - ball[2]) * 160];
+      endDrag = 4;
+      // Air whistling off the ball at speed.
+      if (f.drawn > 0.4 && Math.random() < dt * 25) this.renderer.particles.emit(ball[0], ball[1], ball[2], { count: 1, color: [0.8, 0.78, 0.74], colorTo: [0.6, 0.58, 0.55], speed: 0.3, life: 0.35, size: 0.18, drag: 2, alpha: 0.35, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
     } else if (f.drawn > 0) {
-      // Let go: the ball is thrown forward by the haul (velocity in verlet is the step from the last position).
-      const v = KNOCK_RELEASE * f.drawn * dt;
-      f.rope.prev[KNOCK_LINKS][0] -= fwd[0] * v;
-      f.rope.prev[KNOCK_LINKS][2] -= fwd[2] * v;
+      // Let go: it flies on round on its chain, slowing, and swings to rest.
       f.drawn = 0;
     }
     f.rope.step(dt, anchor, null, pull, 0.6, endDrag);
+    // A chain does not stretch: no link further from the ring than the chain up to it (a hard whirl pulls hard).
+    for (let i = 1; i <= KNOCK_LINKS; i++) {
+      const p = f.rope.pts[i];
+      const d = Math.hypot(p[0] - anchor[0], p[1] - anchor[1], p[2] - anchor[2]);
+      const most = i * f.rope.seg;
+      if (d > most) {
+        const k = most / d;
+        p[0] = anchor[0] + (p[0] - anchor[0]) * k;
+        p[1] = anchor[1] + (p[1] - anchor[1]) * k;
+        p[2] = anchor[2] + (p[2] - anchor[2]) * k;
+      }
+    }
     // The ball never goes under the sand.
     const floor = this.world.heightAt(ball[0], ball[2]) + 0.4;
     if (ball[1] < floor) ball[1] = floor;

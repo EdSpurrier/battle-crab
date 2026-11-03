@@ -249,7 +249,23 @@ export class Structure {
   /** `loot` takes what comes off (weapons to pick up, rubble that lies a while); without it, pieces shot off simply vanish. */
   constructor(private readonly renderer: Renderer, readonly build: ShellBuild, private readonly groundHeight: (x: number, z: number) => number = () => 0, private readonly loot: Loot | null = null) {
     this.shell = shellType(build.shell);
+    this.original = build.pieces.slice();
     build.pieces.forEach((piece, index) => this.addPart(piece, index));
+  }
+
+  /** The build as it was made (picked-up weapons are not kept past a crack). */
+  private readonly original: Piece[];
+
+  /** Whole again, as built (the player back on the beach): what is left comes off the shell and every piece goes back on. */
+  restore(): void {
+    this.remove(this.instances.slice());
+    this.instances.length = 0;
+    this.parts.length = 0;
+    this.weapons.length = 0;
+    this.build.pieces.length = 0;
+    this.build.pieces.push(...this.original.map((p) => ({ ...p })));
+    this.build.pieces.forEach((piece, index) => this.addPart(piece, index));
+    this.onChange?.();
   }
 
   private readonly metal = material({ roughness: 0.45, metallic: 0.6 });

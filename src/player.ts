@@ -62,8 +62,12 @@ export class Player implements Pushable {
       this.crab.collapse(style, away);
       this.freshCorpse = FRESH_SECONDS;
       this.burning = style === 'burn' ? BURN_SECONDS : 0;
+      this.onCrack?.();
     }
   }
+
+  /** Called the moment the crab is cracked (it comes apart: fallApart.ts). */
+  onCrack: (() => void) | null = null;
 
   /** Just cracked: a push now (the killing blow's) throws the corpse further. A burnt corpse smokes this long. */
   private freshCorpse = 0;

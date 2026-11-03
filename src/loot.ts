@@ -1,4 +1,4 @@
-import { multiply, rotationX, rotationY, translation, type Instance, type PointLight, type Renderer, type Vec3 } from 'gridfall-engine';
+import { multiply, rotationX, rotationY, scaling, translation, type Instance, type PointLight, type Renderer, type Vec3 } from 'gridfall-engine';
 import { CELL, type PieceKind } from './shell';
 
 /**
@@ -25,6 +25,16 @@ interface Item {
   left: number;
   sunk: number;
   phase: number;
+  /** Drawn this many times its mesh's size; rests this high over the sand. */
+  scale: number;
+  lift: number;
+}
+
+/** A loose bit's own size, rest height and how long it lies (rubble's defaults otherwise). */
+export interface LootOptions {
+  scale?: number;
+  lift?: number;
+  seconds?: number;
 }
 
 const GRAVITY = 20;
@@ -39,8 +49,8 @@ export class Loot {
   constructor(private readonly renderer: Renderer, private readonly groundHeight: (x: number, z: number) => number) {}
 
   /** A piece coming off at `pos` (its instance's origin) with velocity `vel`; `kind` null for rubble. */
-  add(kind: PieceKind | null, fixed: Instance, moving: Item['moving'], pos: Vec3, vel: Vec3): void {
-    this.items.push({ kind, fixed, moving, pos: [pos[0], pos[1], pos[2]], vel: [vel[0], vel[1], vel[2]], spin: Math.random() * Math.PI * 2, yaw: Math.random() * Math.PI * 2, rest: -1, upright: 0, left: RUBBLE_SECONDS, sunk: 0, phase: Math.random() * 7 });
+  add(kind: PieceKind | null, fixed: Instance, moving: Item['moving'], pos: Vec3, vel: Vec3, options: LootOptions = {}): void {
+    this.items.push({ kind, fixed, moving, pos: [pos[0], pos[1], pos[2]], vel: [vel[0], vel[1], vel[2]], spin: Math.random() * Math.PI * 2, yaw: Math.random() * Math.PI * 2, rest: -1, upright: 0, left: options.seconds ?? RUBBLE_SECONDS, sunk: 0, phase: Math.random() * 7, scale: options.scale ?? 1, lift: options.lift ?? H });
     const weapons = this.items.filter((i) => i.kind);
     if (weapons.length > MAX_WEAPONS_LYING) {
       const oldest = weapons[0];
@@ -80,7 +90,7 @@ export class Loot {
     let refused: PieceKind | null = null;
     for (let k = this.items.length - 1; k >= 0; k--) {
       const it = this.items[k];
-      const g = this.groundHeight(it.pos[0], it.pos[2]) + H;
+      const g = this.groundHeight(it.pos[0], it.pos[2]) + it.lift;
       if (it.rest < 0) {
         it.vel[1] -= GRAVITY * dt;
         it.pos[0] += it.vel[0] * dt;
@@ -139,13 +149,13 @@ export class Loot {
 
   private pose(it: Item): void {
     const bob = it.kind ? 0.06 * (1 + Math.sin(it.phase)) * it.upright : 0;
-    const sink = it.sunk * (H * 2 + 0.4);
+    const sink = it.sunk * (it.lift * 2 + 0.4);
     const t = translation(it.pos[0], it.pos[1] + bob - sink, it.pos[2]);
     // Tumbling: turning every way; at rest, a weapon eases to standing on its base, rubble lies as it fell.
     const tumble = multiply(rotationY(it.spin), rotationX(it.spin * 0.7));
     const stand = rotationY(it.yaw);
     const r = it.kind && it.upright > 0 ? (it.upright >= 1 ? stand : multiply(rotationY(it.yaw), rotationX(it.spin * 0.7 * (1 - it.upright)))) : tumble;
-    const m = multiply(t, r);
+    const m = it.scale === 1 ? multiply(t, r) : multiply(multiply(t, r), scaling(it.scale, it.scale, it.scale));
     (it.fixed.model as Float32Array).set(m);
     if (it.moving) (it.moving.instance.model as Float32Array).set(multiply(m, translation(it.moving.pivot[0], it.moving.pivot[1], it.moving.pivot[2])));
   }

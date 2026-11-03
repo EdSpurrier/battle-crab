@@ -5,8 +5,9 @@ import { Controls } from './controls';
 import { Enemy } from './enemy';
 import { GamepadInput } from './gamepad';
 import { buildGround } from './ground';
-import { World, wreckFx } from './impacts';
+import { World } from './impacts';
 import { debrisFor } from './debris';
+import { fallApart } from './fallApart';
 import { LifeBars } from './lifebars';
 import { Hell, hellBuild } from './hell';
 import { Waves } from './waves';
@@ -64,6 +65,8 @@ const props = new Props(renderer, (x, z) => ground.heightAt(x, z), map.props);
 props.attach(world, loot);
 player.blockers = world.obstacles;
 structure.owner = player;
+// Cracked, the crab comes apart at once (fallApart.ts); back on the beach it is whole again (Structure.restore, Crab.revive).
+player.onCrack = () => fallApart(renderer, player.crab, structure, loot);
 // A burst flings the loot lying about, and shakes the view the nearer it is to the crab.
 world.blasts.push((at, r, s) => loot.blast(at, r, s));
 world.blasts.push((at, r, s) => {
@@ -74,6 +77,9 @@ world.blasts.push((at, r, s) => {
 const debris = debrisFor(renderer, (x, z) => ground.heightAt(x, z));
 const arsenal = new Arsenal(renderer, structure, world, player, 1, HELL);
 structure.invulnerable = HELL;
+// Unlimited ammunition: on unless the settings turn it off (Bullet Hell is always bottomless).
+let unlimitedAmmo = true;
+arsenal.infinite = true;
 // Bullet Hell: a quicker crab, and every gun fires dead level.
 structure.flatAim = HELL;
 player.speedScale = HELL ? 1.25 : 1;
@@ -131,6 +137,11 @@ const PAD_LOOK = 2.6;
 const controls = new Controls(renderer, camera, canvas, ground, LOOK_SPEED);
 const look = installLook(document.body, renderer, camera, mist, controls);
 // Opening the panel gives the cursor back (so it can be used); the game plays on underneath.
+look.panel.section('Game').toggle_('game.unlimitedAmmo', 'Unlimited ammo', () => unlimitedAmmo, (v) => {
+  unlimitedAmmo = v;
+  // (the action bar shows it on its next refresh)
+  arsenal.infinite = v || HELL;
+});
 look.panel.onToggle = (open) => {
   if (open && locked()) document.exitPointerLock();
 };
@@ -211,7 +222,7 @@ structure.onChange = () => {
   if (action >= actions().length) setAction(0);
   else setAction(action);
   const n = structure.alivePieces.length;
-  if (n < pieceCount) say('A piece came off!');
+  if (n < pieceCount && player.alive) say('A piece came off!');
   pieceCount = n;
 };
 
@@ -448,15 +459,12 @@ function frame(now: number): void {
     player.update(dt, [0, 0, 0], player.yaw, false);
     const was = deadFor;
     deadFor += dt;
-    if (was < 1.2 && deadFor >= 1.2) {
-      const b = player.crab.body;
-      wreckFx(renderer, [b[12], b[13] + 0.3, b[14]]);
-      debris.burst([b[12], b[13] + 0.3, b[14]], 'shell', 18, 6, 0.16);
-    }
     cracked.innerHTML = `Cracked!<small>back on the beach in ${Math.ceil(3.5 - deadFor)}…</small>`;
     if (deadFor >= 3.5) {
       deadFor = 0;
       player.revive([map.spawn[0], 0, map.spawn[1]]);
+      structure.restore();
+      hell?.apply();
       cracked.hidden = true;
     }
   }

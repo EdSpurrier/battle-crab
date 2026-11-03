@@ -423,6 +423,7 @@ export class Crab {
       const instance: Instance = { mesh: new Mesh(gl, data), model: new Float32Array(16), material: mat };
       renderer.instances.push(instance);
       this.owned.push(instance);
+      this.meshData.set(instance, data);
       return instance;
     };
     const fixed = (data: MeshData, mat = skin): void => {
@@ -802,6 +803,7 @@ export class Crab {
   }
 
   revive(): void {
+    for (const claw of this.claws) for (const inst of [claw.upper, claw.lower, claw.palm, claw.jawLower, claw.jawUpper]) inst.hidden = false;
     this.collapsing = -1;
     this.roll = 0;
     this.pitch = 0;
@@ -860,6 +862,35 @@ export class Crab {
   }
 
   /** Take the crab out of the renderer and free its meshes (the build screen swapping shells). */
+  /** Each part's mesh data (a claw breaking off gets a mesh of its own from it). */
+  private readonly meshData = new Map<Instance, MeshData>();
+
+  /**
+   * The claws break off (a cracked crab): each arm, forearm, palm and jaw becomes a loose piece, a copy
+   * with a mesh of its own placed where the part is now, flung away from the body; the crab's own are
+   * hidden until `revive`. `take` is given each piece, where it is, the way it flies and the crab's scale.
+   */
+  shedClaws(take: (instance: Instance, at: Vec3, vel: Vec3, scale: number) => void): void {
+    const b = this.body;
+    const centre: Vec3 = [b[12], b[13], b[14]];
+    const s = Math.hypot(b[0], b[1], b[2]) || 1;
+    for (const claw of this.claws) {
+      for (const inst of [claw.upper, claw.lower, claw.palm, claw.jawLower, claw.jawUpper]) {
+        if (inst.hidden) continue;
+        const data = this.meshData.get(inst);
+        if (!data) continue;
+        const m = inst.model as Float32Array;
+        const at: Vec3 = [m[12], m[13], m[14]];
+        const out: Vec3 = [at[0] - centre[0], 0, at[2] - centre[2]];
+        const l = Math.hypot(out[0], out[2]) || 1;
+        const sp = 2.5 + Math.random() * 3;
+        const vel: Vec3 = [(out[0] / l) * sp + (Math.random() - 0.5) * 2, 3 + Math.random() * 4, (out[2] / l) * sp + (Math.random() - 0.5) * 2];
+        take({ mesh: new Mesh(this.renderer.gl, data), model: new Float32Array(m), material: inst.material }, at, vel, s);
+        inst.hidden = true;
+      }
+    }
+  }
+
   dispose(): void {
     const gone = new Set(this.owned);
     const list = this.renderer.instances;
