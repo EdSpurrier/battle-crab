@@ -5,6 +5,23 @@ import { invert, multiply, transformPoint, type CameraLike, type Vec3 } from 'gr
  * marched until it goes under the heightfield, then closed in on by bisection. Outside the map
  * the ground is taken as flat at 0. Null when the ray never meets the ground (the sky).
  */
+/** The ray through a screen point: where it starts (the near plane) and its way (unit). */
+export function screenRay(camera: CameraLike, canvas: HTMLCanvasElement, clientX: number, clientY: number): { from: Vec3; dir: Vec3 } {
+  const r = canvas.getBoundingClientRect();
+  const nx = ((clientX - r.left) / r.width) * 2 - 1;
+  const ny = 1 - ((clientY - r.top) / r.height) * 2;
+  const inv = invert(multiply(camera.projection(r.width / r.height), camera.view()));
+  const un = (z: number): Vec3 => {
+    const p = transformPoint(inv, [nx, ny, z]);
+    return [p[0] / p[3], p[1] / p[3], p[2] / p[3]];
+  };
+  const a = un(-1);
+  const b = un(1);
+  const dir: Vec3 = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
+  const len = Math.hypot(dir[0], dir[1], dir[2]);
+  return { from: a, dir: [dir[0] / len, dir[1] / len, dir[2] / len] };
+}
+
 export function pickGround(camera: CameraLike, canvas: HTMLCanvasElement, clientX: number, clientY: number, heightAt: (x: number, z: number) => number, size: number): Vec3 | null {
   const r = canvas.getBoundingClientRect();
   const nx = ((clientX - r.left) / r.width) * 2 - 1;

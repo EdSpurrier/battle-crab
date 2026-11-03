@@ -14,7 +14,8 @@ import { CELL, MATERIALS, MAX_CARRIED, burns, canPlace, cellCentre, maxWeapons, 
 
 /** How far a turret traverses from the way it is mounted (radians), how it elevates, and how quickly it turns (per second). */
 const TRAVERSE = (140 * Math.PI) / 180;
-const ELEVATE: [number, number] = [(-20 * Math.PI) / 180, (60 * Math.PI) / 180];
+/** How far a barrel tips down and up (radians): down far enough to hit the sand by the crab's own feet from the top of a tower. */
+const ELEVATE: [number, number] = [(-75 * Math.PI) / 180, (60 * Math.PI) / 180];
 const TURN_RATE = 9;
 /** A cannonball's speed: the barrel's elevation is solved so the ball comes down on the aim point. */
 export const CANNON_SPEED = 20;

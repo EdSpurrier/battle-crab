@@ -71,6 +71,17 @@ export class World {
     return best;
   }
 
+  /** The first crab or piece of one along a ray (no sand, no rocks), not `ignore`'s: what the cursor is over. */
+  firstMoving(from: Vec3, dir: Vec3, maxDistance: number, ignore?: unknown): { hit: Hit; box: Obstacle } | null {
+    let best: { hit: Hit; box: Obstacle } | null = null;
+    for (const o of this.moving) {
+      if (o.owner === undefined || (ignore !== undefined && (o.owner === ignore || o.self === ignore))) continue;
+      const h = this.boxHit(o, from, dir, best ? best.hit.distance : maxDistance);
+      if (h) best = { hit: h, box: o };
+    }
+    return best;
+  }
+
   /** The first thing between two points (a moving ball's step), or null. */
   segment(from: Vec3, to: Vec3, ignore?: unknown): Hit | null {
     const d: Vec3 = [to[0] - from[0], to[1] - from[1], to[2] - from[2]];
