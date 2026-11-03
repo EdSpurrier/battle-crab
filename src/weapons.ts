@@ -2,6 +2,8 @@ import { Mesh, MeshBuilder, box, material, multiply, rotationY, translation, typ
 import { DAMAGE, type Combatant } from './combat';
 import { impactFx, type Hit, type Obstacle, type World } from './impacts';
 import { pieceType, type PieceKind } from './shell';
+import { isPushable, radialImpulse, withLength } from './physics';
+import { isPropRef } from './props';
 import { CANNON_SPEED, GRENADE_SPEED, isPartRef, type Mounted, type Structure } from './structure';
 
 /**
@@ -38,6 +40,7 @@ interface Ball {
 interface Pending {
   at: number;
   hit: Hit;
+  dir: Vec3;
   damage: number;
   size: number;
   blast: number;
@@ -128,6 +131,17 @@ const KNOCK_DRAW_SECONDS = 0.5;
 const KNOCK_RELEASE = 11;
 const KNOCK_MIN_SPEED = 3.5;
 const KNOCK_FULL_SPEED = 11;
+/**
+ * The blows' pushes (an impulse: units a second for a mass of one). A cannonball punches what it hits
+ * along its flight, and where it lands everything within CANNON_PUSH_RADIUS is shoved outward; the
+ * spiky ball and the knocker push by their speed; a bullet barely nudges.
+ */
+const CANNON_PUNCH = 14;
+const CANNON_PUSH = 14;
+const CANNON_PUSH_RADIUS = 4;
+const SPIKE_PUNCH = 0.65;
+const KNOCK_PUNCH = 0.75;
+const BULLET_NUDGE = 0.3;
 /** The spiky ball's chain: links in it. */
 const SPIKE_LINKS = 24;
 const GRAVITY = 20;
@@ -289,7 +303,7 @@ export class Arsenal {
     for (let i = this.pending.length - 1; i >= 0; i--) {
       if (this.pending[i].at <= this.clock) {
         const h = this.pending[i];
-        this.land(h.hit, h.size, h.damage);
+        this.land(h.hit, h.size, h.damage, withLength(h.dir, BULLET_NUDGE * h.size));
         if (h.blast > 0) this.splash(h.hit.point, h.blast, h.damage * 0.6);
         this.pending.splice(i, 1);
       }
@@ -550,7 +564,7 @@ export class Arsenal {
       const key = o.owner;
       if (this.knockHits.has(key)) continue;
       this.knockHits.set(key, this.clock + 0.5);
-      this.hurtBox(o, DAMAGE.knocker * Math.min(1, speed / KNOCK_FULL_SPEED), 3);
+      this.hurtBox(o, DAMAGE.knocker * Math.min(1, speed / KNOCK_FULL_SPEED), 3, [vel[0] * KNOCK_PUNCH, Math.abs(vel[1]) * KNOCK_PUNCH * 0.5 + 1, vel[2] * KNOCK_PUNCH]);
       f.rope.slowEnd(0.45);
     }
   }
@@ -587,7 +601,8 @@ export class Arsenal {
       const next: Vec3 = [t.pos[0] + t.vel[0] * dt, t.pos[1] + t.vel[1] * dt, t.pos[2] + t.vel[2] * dt];
       const hit = this.world.segment(t.pos, next, this.owner);
       if (hit) {
-        this.land(hit, 2, DAMAGE.spikeball);
+        // The heavy ball carries its speed into whatever it hits.
+        this.land(hit, 2, DAMAGE.spikeball, [t.vel[0] * SPIKE_PUNCH, Math.max(1.5, t.vel[1] * SPIKE_PUNCH), t.vel[2] * SPIKE_PUNCH]);
         t.pos = [hit.point[0] + hit.normal[0] * 0.4, hit.point[1] + hit.normal[1] * 0.4, hit.point[2] + hit.normal[2] * 0.4];
         t.phase = 'landed';
         t.resting = true;
@@ -635,7 +650,7 @@ export class Arsenal {
       if (t.hitCool <= 0) {
         const hit = this.world.segment(was, t.pos, this.owner);
         if (hit && hit.owner !== undefined) {
-          this.land(hit, 1.5, DAMAGE.spikeball * 0.4);
+          this.land(hit, 1.5, DAMAGE.spikeball * 0.4, withLength([t.pos[0] - was[0], 0.3, t.pos[2] - was[2]], 4));
           t.hitCool = 0.4;
         }
       }
@@ -681,7 +696,7 @@ export class Arsenal {
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 6, color: [1, 1, 0.9], colorTo: r.color, speed: 0.5, life: 0.12, size: 0.8, fadeCurve: 'down', sizeCurve: 'down', shape: 'disc' });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 46, color: r.color, colorTo: r.colorTo, speed: 6, cone: Math.PI, life: 0.8, size: 0.09, gravity: 3, drag: 1.5, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark', stretch: 2 });
         this.renderer.particles.emit(r.pos[0], r.pos[1], r.pos[2], { count: 24, color: r.colorTo, colorTo: [1, 1, 1], speed: 2.5, cone: Math.PI, life: 1.6, size: 0.06, gravity: 4, drag: 0.8, fadeCurve: 'down', sizeCurve: 'none', shape: 'spark' });
-        for (const o of this.world.near(r.pos, 2.2, this.owner)) this.hurtBox(o, DAMAGE.fireworks, 1);
+        for (const o of this.world.near(r.pos, 2.2, this.owner)) this.hurtBox(o, DAMAGE.fireworks, 1, radialImpulse(r.pos, o.center, 2.2, 3.5) ?? undefined);
         this.rockets.splice(i, 1);
       }
     }
@@ -698,7 +713,11 @@ export class Arsenal {
       const hit = this.world.segment(b.pos, next, this.owner);
       if (hit || b.life <= 0) {
         if (hit) {
-          this.land(hit, 4 * b.size, DAMAGE.cannon * b.damage);
+          // The ball punches what it hits along its flight, and its landing shoves everything round it back.
+          const punch = withLength([b.vel[0], 0, b.vel[2]], CANNON_PUNCH * b.size);
+          punch[1] = 3.5 * b.size;
+          this.land(hit, 4 * b.size, DAMAGE.cannon * b.damage, punch);
+          this.pushAt(hit.point, CANNON_PUSH_RADIUS * Math.sqrt(b.size), CANNON_PUSH * b.size, hit.self ?? hit.owner);
           if (b.blast > 0) this.splash(hit.point, b.blast, DAMAGE.cannon * b.damage * 0.5);
         }
         const list = this.renderer.instances;
@@ -723,6 +742,7 @@ export class Arsenal {
   /** A blast round `at`: everything within `radius` takes `damage`, with a boom to match. */
   private splash(at: Vec3, radius: number, damage: number): void {
     for (const o of this.world.near(at, radius, this.owner, this.structure.flatAim)) this.hurtBox(o, damage, 1);
+    this.pushAt(at, radius * 1.3, 2.2 * radius);
     const p = this.renderer.particles;
     p.emit(at[0], at[1] + 0.2, at[2], { count: 4, color: [3, 2.2, 1], colorTo: [2, 0.6, 0.1], speed: 0.3, life: 0.14, size: radius * 0.9, fadeCurve: 'down', sizeCurve: 'up', shape: 'disc' });
     p.emit(at[0], at[1] + 0.2, at[2], { count: Math.round(10 * radius), color: [0.5, 0.45, 0.4], colorTo: [0.25, 0.25, 0.25], speed: radius * 1.5, up: 1, life: 1 + radius * 0.2, size: 0.3 + radius * 0.12, drag: 1.5, alpha: 0.55, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
@@ -732,21 +752,47 @@ export class Arsenal {
 
   // ---------- hits
 
-  /** A hit lands: its effect, and the damage to whoever (or whatever piece) was hit. */
-  private land(hit: Hit, size: number, damage: number): void {
+  /** A hit lands: its effect, the damage to whoever (or whatever piece or prop) was hit, and the blow's push on them. */
+  private land(hit: Hit, size: number, damage: number, impulse?: Vec3): void {
     impactFx(this.renderer, hit, size);
-    this.hurtOwner(hit.owner, damage);
+    this.hurtOwner(hit.owner, damage, hit.point);
+    if (impulse) this.shove(hit.self ?? hit.owner, impulse);
   }
 
-  private hurtOwner(owner: unknown, damage: number): void {
+  private hurtOwner(owner: unknown, damage: number, at?: Vec3): void {
     if (isCombatant(owner)) owner.hurt(damage * this.damageScale);
     else if (isPartRef(owner)) owner.structure.damage(owner.index, damage * this.damageScale);
+    else if (isPropRef(owner)) owner.props.damage(owner.index, damage * this.damageScale, at);
   }
 
-  /** A blow to a box (the knocker's ball, a rocket's pop): the effect on it, the damage to its owner. */
-  private hurtBox(o: Obstacle, damage: number, size: number): void {
+  /** Push whoever `target` is (a crab, or the crab whose piece it is) by `impulse`. */
+  private shove(target: unknown, impulse: Vec3): void {
+    if (isPushable(target)) target.shove(impulse);
+    else if (isPartRef(target)) this.shove(target.structure.owner, impulse);
+  }
+
+  /**
+   * A burst's push: everything within `radius` of `at` (each crab once, however many of its pieces are in
+   * reach; `except` not at all, it took the blow itself) is shoved outward and up, the harder the nearer, and
+   * the loose things on the beach with them.
+   */
+  private pushAt(at: Vec3, radius: number, strength: number, except?: unknown): void {
+    const done = new Set<unknown>();
+    for (const o of this.world.near(at, radius, this.owner, this.structure.flatAim)) {
+      const target = o.self ?? o.owner;
+      if (target === except || done.has(target)) continue;
+      done.add(target);
+      const push = radialImpulse(at, o.center, radius, strength);
+      if (push) this.shove(target, push);
+    }
+    for (const f of this.world.blasts) f(at, radius, strength);
+  }
+
+  /** A blow to a box (the knocker's ball, a rocket's pop): the effect on it, the damage to its owner, the push on them. */
+  private hurtBox(o: Obstacle, damage: number, size: number, impulse?: Vec3): void {
     impactFx(this.renderer, { point: [o.center[0], o.center[1], o.center[2]], normal: [0, 1, 0], surface: o.surface, distance: 0, owner: o.owner }, size);
-    this.hurtOwner(o.owner, damage);
+    this.hurtOwner(o.owner, damage, o.center);
+    if (impulse) this.shove(o.self ?? o.owner, impulse);
   }
 
   /** A gun's shot: a ray against the world, a tracer that lasts as long as the flight, the hit due when it lands. */
@@ -757,7 +803,7 @@ export class Arsenal {
     const dir: Vec3 = [d[0] / l, d[1] / l, d[2] / l];
     const hit = this.world.raycast(muzzle, dir, GUN_RANGE, this.owner, this.structure.flatAim);
     const flight = (hit ? hit.distance : GUN_RANGE) / TRACER_SPEED;
-    if (hit) this.pending.push({ at: this.clock + flight, hit, damage, size, blast });
+    if (hit) this.pending.push({ at: this.clock + flight, hit, dir, damage, size, blast });
     this.flash(muzzle, [1, 0.85, 0.5], 0.07, 5, 35);
     this.renderer.particles.emit(muzzle[0], muzzle[1], muzzle[2], { count: 1, color: [3.5, 3, 1.6], colorTo: [3, 1.6, 0.5], speed: TRACER_SPEED, dir, cone: 0, life: Math.max(0.02, flight), size: 0.17 * size, stretch: 10, vary: 0, fadeCurve: 'none', sizeCurve: 'none', shape: 'spark' });
     // A glowing core so the round reads from above as well.

@@ -32,7 +32,9 @@ src/ground.ts   the beach from a map: engine terrain (levels; one step slopes, m
 src/mist.ts     MistSet: the map's banks as fog volumes, kept in step with their defs (sync), a thickness over all
 src/props.ts    Props: the map's rocks, boulders, clam and snail shells, driftwood and starfish, one procedural
                 (lumpy, seeded) mesh per kind, an instance per prop stood on the ground; the solid ones
-                (rock, boulder, driftwood) as boxes for shots; pick by reach for the map maker
+                (rock, boulder, driftwood, clam, snail) as boxes for shots and walking; attach(world, loot) puts them
+                in the world; shells and driftwood break (hp; a PropRef owns the box): shattered debris, chunks
+                tumbling onto the sand as loot rubble, the box gone so it blocks nothing; pick by reach for the map maker
 src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down the left (SVG paths in TOOLS /
                 ICONS, a tooltip per button from data-tip) with raise / lower / flatten / smooth under a round
                 brush, paint, mist (click empty ground: new bank; click or drag a bank; a bank list for the
@@ -40,17 +42,20 @@ src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down 
                 size, turn, kind, duplicate, delete on the right), start; the tool's options beside the toolbar
                 (rebuilt per tool); the chosen bank's or prop's controls on the right; saves as you go;
                 Download / Load / New in the toolbar
-src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab
+src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab; Pushable: shove
+                (impulse / mass) adds a push the sand takes back, an upward part throws it, a corpse also tumbles and spins
+src/physics.ts  Pushable (shove), radialImpulse (a burst's push on a point: outward, up, less with distance), withLength
+src/waves.ts    Waves (battle or hell rules): kills, stage (every 5 / 6 cracks), onKill (stage news), reset on death,
+                wantEnemies, firstKind, nextKind (the stage's roster: marchers in threes, a boss every fifth stage),
+                respawnSeconds, armorScale, heat (the gauge's colour)
 src/controls.ts the two control schemes (settings or C), topdown the default: "3rd person" (mouse orbits, pointer lock) and "topdown"
                 (orthographic 45° follow view; WASD on the view; the mouse aims a ground marker the crab faces;
                 Q/E turn); the third-person camera's settings are kept while in top down
 src/hell.ts     Bullet Hell (index.html?mode=hell): hellBuild (a whelk, a machine gun and a grenade launcher, tiny
                 clampers), PRIMARY / SECONDARY stage tables (cumulative; the last repeats), boostFor(table, stage) -> a
-                weapons.ts Boost; Hell: kills, stage (one per 6 cracks), onKill (a power-up at least every 3 cracks; stage
-                news), powerUp, firePrimary / fireSecondary (left / right button; the launcher on a recharge shown as a
-                chip's charge bar), reset on death, wantEnemies (3 + stage + stage / 2, up to 12), nextKind (the stage's
-                roster: marchers in threes, a boss every fifth stage), respawnSeconds, armorScale, heat (the gauge's colour)
-src/enemyKinds.ts the kinds of opponent: random (the battle) and Bullet Hell's marcher (half size, swarms, nips), gunner,
+                weapons.ts Boost; Hell: onKill (a power-up at least every 3 cracks), powerUp, firePrimary / fireSecondary
+                (left / right button; the launcher on a recharge shown as a chip's charge bar), reset on death
+src/enemyKinds.ts the kinds of opponent: random (random builds) and the wave kinds: marcher (half size, swarms, nips), gunner,
                 skirmisher (fast, flame, darts in), bruiser (big, slow, cannon + grenades), rocketeer (far off, fireworks),
                 boss (twice size, four guns): scale, armour, speed, keep distance, range, burst / rest, weapons, tint
 src/gamepad.ts  GamepadInput: the first connected pad (standard mapping) polled each frame: left stick moves, right
@@ -96,8 +101,9 @@ src/impacts.ts  World: what shots hit (the heightfield, boulders, the crabs' box
 src/combat.ts   Combatant (health, hurt), DAMAGE per weapon, crabBox (a crab's hit box, owner = the combatant)
 src/enemy.ts    Enemy: a Player of an EnemyKind (random: a random shell and build; else the kind's weapons on planks),
                 tinted, scaled (Crab.scale), a softer Arsenal; a mind that keeps the kind's distance (0: charges), circles,
-                fires all its guns in bursts, nips without guns, jumps; at 0 health it
-                collapses, bursts 2.2 s later and is `gone` (main.ts then drops it and counts the kill)
+                fires all its guns in bursts, nips without guns, jumps; Pushable; at 0 health it collapses (main.ts
+                counts the kill then), bursts at 1.3 s shedding its pieces, lies as a `corpse` that shots and walkers push
+                about for 20 s (6 at most: the oldest `sinkNow`), sinks into the sand and is `gone`
 src/lifebars.ts life bars over opponents (projected through the camera) and the player's along the bottom
 src/crab.ts     the crab built from code (body, spiral shell, eye stalks, claws, three leg pairs) with
                 procedural walking: rest spots per foot, steps in two alternating groups, two-bone IK per leg;
@@ -135,14 +141,28 @@ a stage on the primary or (once the primary has one) the grenades. Stages stack:
 fire, a trident at 45°, five-way, explosive rounds, a minigun rate, seven-way, a ring of twelve streams, then "Overkill"
 over and over; the grenades go bigger bang, double shot, quick recharge, cluster (bomblets), triple spread, heavy
 grenades, carpet, then "Armageddon" over and over. The guns are drawn bigger with each stage (`Mounted.grow`, up to 2.4).
-Waves: a stage every 6 cracks (the gauge down the right: the stage, a bar to the next, its colour cyan to magenta with
-the heat), more opponents each stage (up to 12), tougher (+8 % armour a stage), new kinds as the stages mount (marchers
-always, gunners from 2, skirmishers 3, bruisers 4, rocketeers 5) and a boss every fifth stage. Cracked, the run is over:
-back to the plain guns and stage one. Loose weapons cannot be picked up in this mode.
+Waves (waves.ts, hell rules): a stage every 6 cracks, more opponents each stage (4, then 1.5 more a stage, up to 12),
+marchers always, gunners from 2, skirmishers 3, bruisers 4, rocketeers 5. Cracked, the run is over: back to the plain
+guns and stage one. Loose weapons cannot be picked up in this mode.
+
+## Waves
+Both modes ramp up (waves.ts). The gauge down the right shows the stage, a bar to the next, its colour cyan to magenta
+with the heat. Each stage brings more opponents, tougher ones (+8 % armour a stage), quicker replacements, new kinds
+and a boss every fifth stage. The battle's rules: a stage every 5 cracks, 3 opponents then one more a stage (up to 9),
+the random-build crabs always, march crabs from stage 2, gunners and skirmishers 3, bruisers 4, rocketeers 5. The
+player cracked ends the run: back to stage one ("Run over at stage N").
+
+## Physics
+No rigid-body engine: blows push (physics.ts). A Pushable takes an impulse divided by its mass (Player.mass: the load
+and the crab's size squared, at least half). Alive, a crab staggers back (a push the sand takes back, a hop for an
+upward part); cracked, the corpse slides further, hops, and tumbles (Crab.jolt: roll and pitch on a spring back to
+lying on its side, a spin about +y). A blow to a piece pushes its crab (Structure.owner). The cannonball punches what
+it hits along its flight (CANNON_PUNCH) and its landing shoves everything within CANNON_PUSH_RADIUS outward and up;
+the spiky ball pushes by its speed, the knocker by its swing, bursts (grenades, explosive rounds, fireworks) push
+round them and fling the loot lying about (World.blasts). Walking into a corpse nudges it along.
 
 ## Combat so far
-Three opponents on the beach at a time (main.ts ENEMIES), spawned at least 14 units from the player, one
-replaced 4 s after it is cracked. Health is the shell's armour. Hits flash the crab red. The player cracked
+Opponents spawn at least 14 units from the player, in waves (above). Health is the shell's armour. Hits flash the crab red. The player cracked
 keels over (`Crab.collapse`: a roll about its forward axis in `toWorld`/`poseBody`, the body sinks, the legs splay,
 the claws drop, the lids shut; 1.3 s), bursts at 1.2 s, and is back at the spawn after 3.5 s under a "Cracked!" message.
 An opponent that bursts sheds every piece still on it: its weapons lie on the sand for the player to collect (a picked-up

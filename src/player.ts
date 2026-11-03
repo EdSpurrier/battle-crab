@@ -2,6 +2,7 @@ import type { Renderer, Vec3 } from 'gridfall-engine';
 import { Crab } from './crab';
 import type { Ground } from './ground';
 import type { Obstacle } from './impacts';
+import type { Pushable } from './physics';
 import { SHELLS, weightFactor, type ClawKind, type ShellType } from './shell';
 
 /** A full sprint lasts this long unladen (weight shortens it: × weightFactor), and comes all the way back in STAMINA_REST. */
@@ -15,7 +16,7 @@ const STAMINA_REST = 5;
  * across it (a crab's sidestep), facing the same way throughout. The crab model follows this
  * each frame.
  */
-export class Player {
+export class Player implements Pushable {
   position: Vec3;
   /** Which way the crab faces (radians about +y): turns to the camera's yaw while moving, stays put otherwise. */
   yaw = 0;
@@ -49,6 +50,39 @@ export class Player {
     this.crab.flash();
     if (this.health === 0) this.crab.collapse();
   }
+
+  /**
+   * Pushed by a blow: a velocity on top of the walk that the sand soon takes back; an upward part
+   * throws the crab into the air. The mass divides it (a loaded shell, a big crab: harder to move).
+   * A corpse also spins and tumbles with the blow.
+   */
+  readonly push: Vec3 = [0, 0, 0];
+  mass = 1;
+  /** A corpse turning about +y (radians a second) from a glancing blow. */
+  private spin = 0;
+
+  shove(impulse: Vec3): void {
+    const k = 1 / this.mass;
+    this.push[0] += impulse[0] * k;
+    this.push[2] += impulse[2] * k;
+    const up = impulse[1] * k;
+    if (up > 0.3) {
+      this.vy = Math.max(this.vy, 0) + up;
+      if (this.air <= 0) this.air = 1e-3;
+    }
+    if (!this.alive) {
+      // The corpse tumbles: a blow across it rolls it, along it pitches it; off centre, it spins.
+      const s = Math.sin(this.yaw);
+      const c = Math.cos(this.yaw);
+      const side = (impulse[0] * c - impulse[2] * s) * k;
+      const fore = (impulse[0] * s + impulse[2] * c) * k;
+      this.crab.jolt(side, fore);
+      this.spin += (Math.random() - 0.5) * 0.6 * Math.hypot(side, fore);
+    }
+  }
+
+  /** Sunk this far into the sand (a corpse going). */
+  sink = 0;
 
   /** The solid things on the beach (rocks, boulders, driftwood): the crab walks round them, not through. */
   blockers: Obstacle[] = [];
@@ -85,6 +119,8 @@ export class Player {
     this.speed = 4.8 * this.shell.speed * f * this.speedScale;
     this.jumpSpeed = 8 * Math.sqrt(this.shell.jump * f);
     this.staminaSeconds = STAMINA_SECONDS * f;
+    // What a blow has to move: the crab (by its size, squared: a march crab flies, a boss barely rocks) and its load.
+    this.mass = (1 + weight / 40) * Math.max(0.5, this.crab.scale * this.crab.scale);
   }
 
   /** Walking this many times the usual pace (a kind of crab, Bullet Hell); setWeight applies it. */
@@ -126,6 +162,9 @@ export class Player {
     this.health = this.maxHealth;
     this.stamina = 1;
     this.winded = false;
+    this.push[0] = this.push[2] = 0;
+    this.spin = 0;
+    this.sink = 0;
     this.crab.revive();
   }
 
@@ -164,16 +203,30 @@ export class Player {
       this.stamina = Math.min(1, this.stamina + dt / STAMINA_REST);
       if (this.winded && this.stamina >= 0.3) this.winded = false;
     }
+    const margin = 1.5;
     if (len > 1e-4) {
       const nx = dir[0] / len;
       const nz = dir[2] / len;
       const step = this.speed * (this.running ? this.runFactor : 1) * Math.min(1, len) * dt;
-      const margin = 1.5;
       this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, x0 + nx * step));
       this.position[2] = Math.min(this.ground.size - margin, Math.max(margin, z0 + nz * step));
     }
+    // A blow's push carries the crab on; the sand takes it back (slower for a corpse sliding, hardly at all in the air).
+    if (this.push[0] || this.push[2]) {
+      this.position[0] = Math.min(this.ground.size - margin, Math.max(margin, this.position[0] + this.push[0] * dt));
+      this.position[2] = Math.min(this.ground.size - margin, Math.max(margin, this.position[2] + this.push[2] * dt));
+      const drag = Math.exp(-(this.airborne ? 0.3 : this.alive ? 3.5 : 3) * dt);
+      this.push[0] *= drag;
+      this.push[2] *= drag;
+      if (Math.hypot(this.push[0], this.push[2]) < 0.05) this.push[0] = this.push[2] = 0;
+    }
+    if (this.spin) {
+      this.yaw += this.spin * dt;
+      this.spin *= Math.exp(-2.5 * dt);
+      if (Math.abs(this.spin) < 0.02) this.spin = 0;
+    }
     this.unblock();
-    this.position[1] = this.ground.heightAt(this.position[0], this.position[2]) + this.air;
+    this.position[1] = this.ground.heightAt(this.position[0], this.position[2]) + this.air - this.sink;
     if (dt > 0) {
       this.velocity[0] = (this.position[0] - x0) / dt;
       this.velocity[1] = this.vy;

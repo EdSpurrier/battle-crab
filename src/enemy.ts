@@ -3,6 +3,7 @@ import { type Combatant } from './combat';
 import { ENEMY_KINDS, type EnemyKind } from './enemyKinds';
 import type { Ground } from './ground';
 import { wreckFx, type World } from './impacts';
+import type { Vec3 as V3 } from 'gridfall-engine';
 import type { Loot } from './loot';
 import { Player } from './player';
 import { CLAWS, CLAW_KINDS, MATERIAL_IDS, PIECES, SHELLS, type Piece, type PieceKind, type ShellBuild } from './shell';
@@ -20,6 +21,9 @@ import { Arsenal } from './weapons';
  */
 
 const WEAPONS = PIECES.filter((p) => p.weapon).map((p) => p.kind);
+/** A corpse lies this long, then takes this long to sink into the sand. */
+const CORPSE_SECONDS = 20;
+const SINK_SECONDS = 1.6;
 
 /** A random build: a few planks on the deck and one or two weapons on them. */
 function randomBuild(rand: () => number): ShellBuild {
@@ -75,8 +79,11 @@ export class Enemy implements Combatant {
   private burst = -1;
   private errX = 0;
   private errZ = 0;
-  /** Cracked: it collapses for a moment, then bursts and is gone. */
+  /** Cracked: it collapses, bursts (shedding its weapons), lies as a corpse that can be knocked about, then sinks and is gone. */
   private dyingFor = 0;
+  private burstDone = false;
+  /** Sinking into the sand (the corpse going): seconds in, or -1 while it lies. */
+  private sinking = -1;
   gone = false;
 
   constructor(private readonly renderer: Renderer, ground: Ground, private readonly world: World, at: Vec3, loot: Loot, options: EnemyOptions = {}) {
@@ -92,6 +99,7 @@ export class Enemy implements Combatant {
     this.player.health = this.player.maxHealth;
     this.player.speedScale = kind.speed;
     this.structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z), loot);
+    this.structure.owner = this;
     this.player.crab.structure = this.structure;
     this.player.crab.setTeam(kind.tint);
     // What it carries slows it; pieces shot off lighten it.
@@ -136,25 +144,45 @@ export class Enemy implements Combatant {
   hurt(amount: number): void {
     this.player.hurt(amount);
   }
+  shove(impulse: V3): void {
+    this.player.shove(impulse);
+  }
+  /** Lying cracked on the sand (a corpse, not yet gone). */
+  get corpse(): boolean {
+    return !this.alive && !this.gone;
+  }
+  /** Let the corpse go now (too many lie about). */
+  sinkNow(): void {
+    if (this.sinking < 0) this.sinking = 0;
+  }
 
   /** A frame of the mind and the body. `target`: who to fight (null: wander in place). */
   update(dt: number, target: Combatant | null): void {
     const p = this.player;
     if (!this.alive) {
       if (this.gone) return;
-      // Keel over (the crab plays its collapse), lie a moment, then burst and go.
+      // Keel over (the crab plays its collapse); once down it bursts, and whatever was still on its shell is
+      // flung onto the sand (weapons for the taking). The corpse lies on, pushed about by whatever hits it,
+      // for CORPSE_SECONDS; then it sinks into the sand and is gone.
       this.arsenal.releaseAll();
       this.dyingFor += dt;
       p.update(dt, [0, 0, 0], p.yaw, false);
       this.structure.update(dt);
       this.arsenal.update(dt, this.crab.body, null);
-      if (this.dyingFor > 2.2) {
-        // It bursts: whatever was still on its shell is flung onto the sand (weapons for the taking).
+      if (!this.burstDone && this.dyingFor > 1.3) {
+        this.burstDone = true;
         const b = this.crab.body;
         wreckFx(this.renderer, [b[12], b[13] + 0.3, b[14]]);
         this.structure.shedAll();
-        this.dispose();
-        this.gone = true;
+      }
+      if (this.sinking < 0 && this.dyingFor > CORPSE_SECONDS) this.sinking = 0;
+      if (this.sinking >= 0) {
+        this.sinking += dt;
+        p.sink = Math.min(1, this.sinking / SINK_SECONDS) * 1.4 * this.kind.scale;
+        if (this.sinking >= SINK_SECONDS) {
+          this.dispose();
+          this.gone = true;
+        }
       }
       return;
     }

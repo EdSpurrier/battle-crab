@@ -1,11 +1,15 @@
 import { Mesh, MeshBuilder, VERTEX_FLOATS, box, material, multiply, rotationY, scaling, translation, type Instance, type Mat4, type MeshData, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
-import type { Obstacle } from './impacts';
+import { shatter, type Obstacle, type Stuff, type Surface, type World } from './impacts';
+import type { Loot } from './loot';
 import { PROP_KINDS, type PropDef, type PropKind } from './map';
 
 /**
  * Things on the beach, drawn from code: rocks and boulders (lumpy, grey, solid), clam and snail
  * shells, driftwood (solid), starfish. One mesh per kind, an instance per prop, stood on the
- * ground at its spot, turned and scaled. The solid ones are boxes for shots to hit.
+ * ground at its spot, turned and scaled. The solid ones are boxes for shots to hit and for the
+ * crabs to walk round. Shells and driftwood break (`hp`): shot enough, one bursts into debris
+ * (a shower of what it is made of, and a few chunks that tumble onto the sand as loot's rubble)
+ * and blocks nothing any more. Rocks and boulders stand whatever hits them.
  */
 
 interface PropLook {
@@ -14,6 +18,11 @@ interface PropLook {
   roughness: number;
   /** Half the size of its box for shots (none: shots pass), before the prop's scale. */
   solid?: Vec3;
+  /** Breakable: the hits it takes (at scale one), what it is made of, what it sounds like when hit, the colours of its chunks. */
+  hp?: number;
+  stuff?: Stuff;
+  surface?: Surface;
+  chunks?: Vec[];
   /** How far across it reaches on the ground (picking in the map maker), before the scale. */
   radius: number;
   /** Swatch colour for the palette. */
@@ -122,16 +131,20 @@ function lookOf(kind: PropKind): PropLook {
         const a = -0.9 + (1.8 * k) / 6;
         ribs.push(placed(box(-0.015, 0.0, 0, 0.015, 0.215, 0.44, CLAM_RIB), a, 0, 0, -0.08));
       }
-      return { name: 'Clam shell', mesh: merge([dome, ...ribs]), roughness: 0.6, radius: 0.5, swatch: '#c7b394' };
+      return { name: 'Clam shell', mesh: merge([dome, ...ribs]), roughness: 0.6, solid: [0.48, 0.2, 0.4], hp: 35, stuff: 'stone', surface: 'shell', chunks: [CLAM, CLAM_RIB], radius: 0.5, swatch: '#c7b394' };
     }
     case 'snail':
-      return { name: 'Snail shell', mesh: merge([lump(0, 0.26, 0, 0.32, 0.26, 0.36, SNAIL, 12, 7, 0.03, 13), lump(0.18, 0.42, -0.12, 0.2, 0.17, 0.2, SNAIL_LIGHT, 10, 6, 0.03, 17), lump(0.33, 0.52, -0.2, 0.1, 0.09, 0.11, SNAIL, 8, 5, 0.03, 19)]), roughness: 0.7, radius: 0.4, swatch: '#9e6b4c' };
+      return { name: 'Snail shell', mesh: merge([lump(0, 0.26, 0, 0.32, 0.26, 0.36, SNAIL, 12, 7, 0.03, 13), lump(0.18, 0.42, -0.12, 0.2, 0.17, 0.2, SNAIL_LIGHT, 10, 6, 0.03, 17), lump(0.33, 0.52, -0.2, 0.1, 0.09, 0.11, SNAIL, 8, 5, 0.03, 19)]), roughness: 0.7, solid: [0.34, 0.3, 0.38], hp: 45, stuff: 'stone', surface: 'shell', chunks: [SNAIL, SNAIL_LIGHT], radius: 0.4, swatch: '#9e6b4c' };
     case 'driftwood':
       return {
         name: 'Driftwood',
         mesh: merge([lump(0, 0.14, 0, 1, 0.14, 0.13, WOOD, 10, 5, 0.08, 23), placed(lump(0, 0, 0, 0.42, 0.07, 0.07, WOOD_DARK, 8, 4, 0.06, 29), 0.6, 0.45, 0.22, 0.15), lump(0.9, 0.12, 0, 0.18, 0.12, 0.12, WOOD_DARK, 8, 4, 0.06, 31)]),
         roughness: 0.9,
         solid: [1, 0.16, 0.16],
+        hp: 70,
+        stuff: 'wood',
+        surface: 'wood',
+        chunks: [WOOD, WOOD_DARK],
         radius: 1,
         swatch: '#5c4733',
       };
@@ -145,11 +158,24 @@ function lookOf(kind: PropKind): PropLook {
 
 export const PROP_LOOKS: Record<PropKind, PropLook> = Object.fromEntries(PROP_KINDS.map((k) => [k, lookOf(k)])) as Record<PropKind, PropLook>;
 
+/** A breakable prop's box carries this: a hit on it hurts the prop. */
+export interface PropRef {
+  props: Props;
+  index: number;
+}
+export const isPropRef = (o: unknown): o is PropRef => !!o && typeof o === 'object' && 'props' in o && (o as PropRef).props instanceof Props;
+
 export class Props {
   private readonly meshes = new Map<PropKind, Mesh>();
   private readonly materials = new Map<PropKind, ReturnType<typeof material>>();
   private instances: Instance[] = [];
   defs: PropDef[] = [];
+  /** Hits left per prop (Infinity for one that never breaks), and each one's box in the world (none once broken). */
+  private hp: number[] = [];
+  private boxes: (Obstacle | null)[] = [];
+  /** The world whose obstacles the boxes are, and where the debris goes (the game; the map maker attaches nothing). */
+  private world: World | null = null;
+  private loot: Loot | null = null;
 
   constructor(private readonly renderer: Renderer, private readonly groundHeight: (x: number, z: number) => number, defs: PropDef[]) {
     for (const k of PROP_KINDS) {
@@ -159,7 +185,7 @@ export class Props {
     this.rebuild(defs);
   }
 
-  /** Draw these props (the old ones gone). */
+  /** Draw these props (the old ones gone), whole again. */
   rebuild(defs: PropDef[]): void {
     this.clear();
     this.defs = defs;
@@ -169,6 +195,70 @@ export class Props {
       this.instances.push(instance);
     }
     this.renderer.instances.push(...this.instances);
+    this.hp = defs.map((d) => (PROP_LOOKS[d.kind].hp ?? Infinity) * d.scale);
+    this.boxes = defs.map((_, i) => this.boxOf(i));
+    if (this.world) this.world.obstacles.push(...this.boxes.filter((b): b is Obstacle => !!b));
+  }
+
+  /** Put the solid props' boxes into the world (shots stop at them, crabs walk round them) and send the debris of broken ones to `loot`. */
+  attach(world: World, loot: Loot): void {
+    this.world = world;
+    this.loot = loot;
+    world.obstacles.push(...this.boxes.filter((b): b is Obstacle => !!b));
+  }
+
+  /** Prop `i`'s box for shots (null: shots pass, or it is broken), owned by it when it can break. */
+  private boxOf(i: number): Obstacle | null {
+    const d = this.defs[i];
+    const look = PROP_LOOKS[d.kind];
+    if (!look.solid) return null;
+    const half: Vec3 = [look.solid[0] * d.scale, look.solid[1] * d.scale, look.solid[2] * d.scale];
+    const box: Obstacle = { center: [d.x, this.groundHeight(d.x, d.z) + half[1], d.z], half, yaw: (d.yaw * Math.PI) / 180, surface: look.surface ?? 'rock' };
+    if (look.hp) box.owner = { props: this, index: i } as PropRef;
+    return box;
+  }
+
+  /** A blow of `amount` to prop `i` (at `at`, for the debris); enough of them and it breaks. */
+  damage(i: number, amount: number, at?: Vec3): void {
+    if (!(this.hp[i] > 0) || !isFinite(this.hp[i])) return;
+    this.hp[i] -= amount;
+    if (this.hp[i] > 0) return;
+    this.hp[i] = 0;
+    this.break(i, at);
+  }
+
+  /** Prop `i` bursts: its drawing goes, its box leaves the world, and what it was made of flies and tumbles onto the sand. */
+  private break(i: number, at?: Vec3): void {
+    const d = this.defs[i];
+    const look = PROP_LOOKS[d.kind];
+    const inst = this.instances[i];
+    if (inst) inst.hidden = true;
+    const wall = this.boxes[i];
+    if (wall && this.world) {
+      const k = this.world.obstacles.indexOf(wall);
+      if (k >= 0) this.world.obstacles.splice(k, 1);
+    }
+    this.boxes[i] = null;
+    const c: Vec3 = wall ? wall.center : [d.x, this.groundHeight(d.x, d.z) + 0.2 * d.scale, d.z];
+    const stuff = look.stuff ?? 'stone';
+    shatter(this.renderer, at ? [at[0], Math.max(at[1], c[1]), at[2]] : c, stuff, 2.5 * Math.sqrt(d.scale));
+    shatter(this.renderer, c, stuff, 1.5 * Math.sqrt(d.scale));
+    if (!this.loot) return;
+    // Chunks: a handful of lumps in its colours, flung out and up, that tumble and lie as rubble (blocking nothing) until they sink.
+    const n = 4 + Math.floor(Math.random() * 3);
+    const colors = look.chunks ?? [[0.5, 0.5, 0.5]];
+    for (let k = 0; k < n; k++) {
+      const s = d.scale * (0.12 + Math.random() * 0.14);
+      const sx = s * (0.7 + Math.random() * 1.4);
+      const sz = s * (0.7 + Math.random() * 1.4);
+      const sy = s * (0.5 + Math.random() * 0.6);
+      const mesh = new Mesh(this.renderer.gl, box(-sx, -sy, -sz, sx, sy, sz, colors[k % colors.length]));
+      const instance: Instance = { mesh, model: new Float32Array(16), material: this.materials.get(d.kind) };
+      this.renderer.instances.push(instance);
+      const a = Math.random() * Math.PI * 2;
+      const sp = 2 + Math.random() * 3;
+      this.loot.add(null, instance, undefined, [c[0] + Math.cos(a) * 0.2 * d.scale, c[1] + 0.1, c[2] + Math.sin(a) * 0.2 * d.scale], [Math.cos(a) * sp, 3 + Math.random() * 3, Math.sin(a) * sp]);
+    }
   }
 
   /** Move prop `i`'s drawing to where its def now says. */
@@ -183,16 +273,9 @@ export class Props {
     (instance.model as Float32Array).set(m);
   }
 
-  /** The solid ones as boxes for shots. */
+  /** The solid ones' boxes for shots (the broken ones gone). */
   obstacles(): Obstacle[] {
-    const out: Obstacle[] = [];
-    for (const d of this.defs) {
-      const solid = PROP_LOOKS[d.kind].solid;
-      if (!solid) continue;
-      const half: Vec3 = [solid[0] * d.scale, solid[1] * d.scale, solid[2] * d.scale];
-      out.push({ center: [d.x, this.groundHeight(d.x, d.z) + half[1], d.z], half, yaw: (d.yaw * Math.PI) / 180, surface: 'rock' });
-    }
-    return out;
+    return this.boxes.filter((b): b is Obstacle => !!b);
   }
 
   /** The prop under a ground point (the nearest whose reach covers it), or -1. */
@@ -217,6 +300,15 @@ export class Props {
     for (let i = 0; i < list.length; i++) if (!gone.has(list[i])) list[k++] = list[i];
     list.length = k;
     this.instances = [];
+    if (this.world) {
+      const boxes = new Set(this.boxes);
+      const obs = this.world.obstacles;
+      let n = 0;
+      for (let i = 0; i < obs.length; i++) if (!boxes.has(obs[i])) obs[n++] = obs[i];
+      obs.length = n;
+    }
+    this.boxes = [];
+    this.hp = [];
   }
 
   dispose(): void {
