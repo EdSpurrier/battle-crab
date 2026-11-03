@@ -18,9 +18,9 @@ const ELEVATE: [number, number] = [(-20 * Math.PI) / 180, (60 * Math.PI) / 180];
 const TURN_RATE = 9;
 /** A cannonball's speed: the barrel's elevation is solved so the ball comes down on the aim point. */
 export const CANNON_SPEED = 20;
-/** Picked-up weapons stack: each this many cells above the top of what is on, the leaning ones this many cells out to a side. */
-const STACK_STEP = 3;
-const STACK_LEAN = 1.5;
+/** The tower of picked-up weapons: its spine stands on this deck row (the back), the shelves are centred on this one. */
+const SPINE_Z = 0;
+const SHELF_Z = 2;
 /** A grenade's: slower, so it goes up and comes down on the aim point. */
 export const GRENADE_SPEED = 15;
 /** What a weapon lobs at, by kind (anything else shoots straight). */
@@ -319,21 +319,36 @@ export class Structure {
   }
 
   /**
-   * Pick a weapon up off the beach (up to MAX_CARRIED in all): it goes on top of the stack above the build,
-   * higher with each one; every second and third one sits out to a side. All of them face forward.
+   * Pick a weapon up off the beach (up to MAX_CARRIED in all): it is built onto a tower above the build. A
+   * spine of posts (joints) rises from the back of the deck; each weapon gets a level of its own: the spine
+   * carried up to it, a plank from the spine to a 3 × 3 shelf of planks in front, and the weapon standing on
+   * the shelf, facing forward. Every second and third shelf sits a cell out to a side.
    */
   pickUp(kind: PieceKind): boolean {
     if (this.weapons.length >= MAX_CARRIED) return false;
-    const [cols, rows] = this.shell.grid;
-    let top = 0;
-    this.build.pieces.forEach((p, k) => {
-      if (!this.parts[k].dead) top = Math.max(top, p.y + (pieceType(p.kind).weapon ? STACK_STEP : 1));
-    });
-    const n = this.build.pieces.filter((p, k) => p.stacked && !this.parts[k].dead).length;
-    const lean = n % 3 === 0 ? 0 : n % 3 === 1 ? 1 : -1;
-    const piece: Piece = { x: (cols - 1) / 2 + lean * STACK_LEAN, y: top, z: (rows - 1) / 2, kind, yaw: 0, stacked: true };
-    this.build.pieces.push(piece);
-    this.addPart(piece, this.build.pieces.length - 1);
+    const [cols] = this.shell.grid;
+    const alive = this.build.pieces.filter((_, k) => !this.parts[k].dead);
+    // The shelf goes just above everything on the shell (a weapon reaches a cell above its own).
+    let shelfY = 0;
+    for (const p of alive) shelfY = Math.max(shelfY, p.y + (pieceType(p.kind).weapon ? 2 : 1));
+    const level = alive.filter((p) => p.stacked && pieceType(p.kind).weapon).length;
+    const lean = level % 3 === 0 ? 0 : level % 3 === 1 ? 1 : -1;
+    const sx = (cols - 1) / 2;
+    const x0 = sx + lean;
+    // The spine carries on from the top of the last level's (or from the deck).
+    let spineFrom = 0;
+    for (const p of alive) if (p.stacked && p.x === sx && p.z === SPINE_Z) spineFrom = Math.max(spineFrom, p.y + 1);
+    const add: Piece[] = [];
+    const block = (x: number, y: number, z: number, kind: PieceKind, material: Piece['material']) => add.push({ x, y, z, kind, yaw: 0, material, stacked: true, level });
+    for (let y = spineFrom; y < shelfY; y++) block(sx, y, SPINE_Z, 'joint', 'metal');
+    block(sx, shelfY, SPINE_Z, 'plank', 'wood');
+    for (let dz = -1; dz <= 1; dz++) for (let dx = -1; dx <= 1; dx++) block(x0 + dx, shelfY, SHELF_Z + dz, 'plank', 'wood');
+    // The weapon's base sits on the shelf: a weapon is drawn three cells tall about its own cell's middle.
+    add.push({ x: x0, y: shelfY + 2, z: SHELF_Z, kind, yaw: 0, stacked: true, level });
+    for (const piece of add) {
+      this.build.pieces.push(piece);
+      this.addPart(piece, this.build.pieces.length - 1);
+    }
     this.onChange?.();
     return true;
   }
@@ -353,8 +368,8 @@ export class Structure {
 
   /** What is still on weighs this much (the claws apart). */
   weight(): number {
-    // A stacked weapon counts half: carrying a tower of them should slow the crab, not stop it.
-    return this.build.pieces.reduce((w, p, i) => (this.parts[i].dead ? w : w + pieceWeight(p) * (p.stacked ? 0.5 : 1)), 0);
+    // A stacked weapon counts half and the tower's blocks nothing: carrying a tower of guns should slow the crab, not stop it.
+    return this.build.pieces.reduce((w, p, i) => (this.parts[i].dead ? w : w + pieceWeight(p) * (p.stacked ? (pieceType(p.kind).weapon ? 0.5 : 0) : 1)), 0);
   }
 
   /** Hit points left of piece `i` as a share. */
@@ -416,12 +431,13 @@ export class Structure {
     return true;
   }
 
-  /** A stacked piece came off: everything stacked above it comes down too. */
+  /** A piece of the tower came off: its level (the weapon, its shelf, its posts) and every level above it come down too. */
   private dropAbove(i: number): void {
     const piece = this.build.pieces[i];
     if (!piece?.stacked) return;
+    const from = piece.level ?? 0;
     this.build.pieces.forEach((p, k) => {
-      if (p.stacked && p.y > piece.y && !this.parts[k].dead) this.drop(k, 2);
+      if (p.stacked && (p.level ?? 0) >= from && !this.parts[k].dead) this.drop(k, 2);
     });
   }
 

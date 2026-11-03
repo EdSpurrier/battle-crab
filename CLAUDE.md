@@ -135,10 +135,13 @@ The build runs locally, so the private engine needs no token in CI.
 them automatically. Keep the folder flat; a file dropped in shows on the next dev reload or build.
 
 ## Carrying more
-Weapons found on the beach stack above the build (`Structure.pickUp`, `Piece.stacked`): each STACK_STEP cells above the
-top of what is on, every second and third one STACK_LEAN cells out to a side, all facing forward, up to
-MAX_CARRIED (8) weapons in all. A stacked piece is held up by the stack, not the grid: when one comes off, everything
-stacked above it comes too (`dropAbove`). Stacked weapons weigh half. Each time the player's health drops through a
+Weapons found on the beach are built onto a tower above the build (`Structure.pickUp`, `Piece.stacked`, `Piece.level`):
+a spine of metal joints rises from the back row of the deck (SPINE_Z); each weapon gets a level: the spine carried up to
+just above everything on the shell, a wooden plank off it to a 3 × 3 wooden shelf in front (SHELF_Z), the weapon standing
+on the shelf facing forward (a weapon is drawn three cells tall about its cell's middle, so it goes two cells above the
+shelf). Every second and third shelf sits a cell out to a side. Up to MAX_CARRIED (8) weapons in all. The tower is held up
+by itself, not the grid: when any piece of a level comes off, that level and every level above it come down
+(`dropAbove`). Stacked weapons weigh half, the tower's blocks nothing. Each time the player's health drops through a
 quarter (main.ts HEALTH_STAGES) the top weapon is shot off (`shedTop`, a stacked one first, never the last). Weapons
 past the four action slots fire with the left button in simple firing and with the last slot otherwise (`extras()`;
 its chip shows +N). Weapons lying about turn, bob, glow and send up sparks; one that has just come off waits WEAPON_WAIT
