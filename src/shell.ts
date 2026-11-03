@@ -96,6 +96,8 @@ export interface Piece {
   material?: Material;
   /** Picked up on the beach and stacked above the build (not part of the grid: held up by the stack under it). */
   stacked?: boolean;
+  /** Which level of the stack it belongs to (its weapon, the shelf under it and the posts up to it). */
+  level?: number;
 }
 
 export interface ShellBuild {
