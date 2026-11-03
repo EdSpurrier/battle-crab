@@ -63,21 +63,22 @@ function chunkMesh(color: Vec, seed: number): MeshData {
 
 export class Debris {
   private readonly chunks: Chunk[] = [];
-  private readonly meshes = new Map<DebrisStuff, Mesh[]>();
+  private readonly meshes = new Map<string, Mesh[]>();
   private readonly mat = material({ roughness: 0.8 });
   /** Embers glow. */
   private readonly glow = material({ roughness: 1, emissive: [3, 1.2, 0.3] });
 
   constructor(private readonly renderer: Renderer, private readonly groundHeight: (x: number, z: number) => number) {}
 
-  private meshOf(stuff: DebrisStuff): Mesh {
-    let list = this.meshes.get(stuff);
+  private meshOf(stuff: DebrisStuff | Vec[]): Mesh {
+    const key = typeof stuff === 'string' ? stuff : stuff.map((c) => c.map((v) => v.toFixed(2)).join(',')).join(';');
+    let list = this.meshes.get(key);
     if (!list) {
       list = [];
-      COLORS[stuff].forEach((col, i) => {
-        for (let k = 0; k < 2; k++) list!.push(new Mesh(this.renderer.gl, chunkMesh(col, i * 7 + k * 13 + stuff.length)));
+      (typeof stuff === 'string' ? COLORS[stuff] : stuff).forEach((col, i) => {
+        for (let k = 0; k < 2; k++) list!.push(new Mesh(this.renderer.gl, chunkMesh(col, i * 7 + k * 13 + key.length)));
       });
-      this.meshes.set(stuff, list);
+      this.meshes.set(key, list);
     }
     return list[Math.floor(Math.random() * list.length)];
   }
@@ -86,7 +87,7 @@ export class Debris {
    * Throw `count` chunks of `stuff` from `at`: along `dir` (a cone about it) or every way, at about
    * `speed`, each about `size` across (with a good spread of sizes).
    */
-  burst(at: Vec3, stuff: DebrisStuff, count: number, speed: number, size: number, dir?: Vec3, cone = 0.8): void {
+  burst(at: Vec3, stuff: DebrisStuff | Vec[], count: number, speed: number, size: number, dir?: Vec3, cone = 0.8): void {
     for (let n = 0; n < count; n++) {
       let v: Vec3;
       if (dir) {
@@ -109,7 +110,7 @@ export class Debris {
     }
   }
 
-  private add(c: { pos: Vec3; vel: Vec3; size: Vec3; stuff: DebrisStuff }): void {
+  private add(c: { pos: Vec3; vel: Vec3; size: Vec3; stuff: DebrisStuff | Vec[] }): void {
     if (this.chunks.length >= MAX_CHUNKS) this.remove(0);
     const instance: Instance = { mesh: this.meshOf(c.stuff), model: new Float32Array(16), material: c.stuff === 'ember' ? this.glow : this.mat };
     this.renderer.instances.push(instance);

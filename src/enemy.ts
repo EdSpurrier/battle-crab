@@ -2,8 +2,8 @@ import type { Renderer, Vec3 } from 'gridfall-engine';
 import { type Combatant, type HitKind } from './combat';
 import { ENEMY_KINDS, type EnemyKind } from './enemyKinds';
 import type { Ground } from './ground';
-import { wreckFx, type World } from './impacts';
-import { debrisFor } from './debris';
+import type { World } from './impacts';
+import { fallApart } from './fallApart';
 import type { Vec3 as V3 } from 'gridfall-engine';
 import type { Loot } from './loot';
 import { Player } from './player';
@@ -82,7 +82,6 @@ export class Enemy implements Combatant {
   private errZ = 0;
   /** Cracked: it collapses, bursts (shedding its weapons), lies as a corpse that can be knocked about, then sinks and is gone. */
   private dyingFor = 0;
-  private burstDone = false;
   /** Sinking into the sand (the corpse going): seconds in, or -1 while it lies. */
   private sinking = -1;
   gone = false;
@@ -101,6 +100,8 @@ export class Enemy implements Combatant {
     this.player.speedScale = kind.speed;
     this.structure = new Structure(renderer, build, (x, z) => ground.heightAt(x, z), loot);
     this.structure.owner = this;
+    // Cracked, it comes apart at once: the shell's pieces and the claws off, broken shell flying.
+    this.player.onCrack = () => fallApart(renderer, this.player.crab, this.structure, loot);
     this.player.crab.structure = this.structure;
     this.player.crab.setTeam(kind.tint);
     // What it carries slows it; pieces shot off lighten it.
@@ -170,13 +171,6 @@ export class Enemy implements Combatant {
       p.update(dt, [0, 0, 0], p.yaw, false);
       this.structure.update(dt);
       this.arsenal.update(dt, this.crab.body, null);
-      if (!this.burstDone && this.dyingFor > 1.3) {
-        this.burstDone = true;
-        const b = this.crab.body;
-        wreckFx(this.renderer, [b[12], b[13] + 0.3, b[14]]);
-        debrisFor(this.renderer).burst([b[12], b[13] + 0.3, b[14]], 'shell', 18 * this.kind.scale, 6, 0.16 * this.kind.scale);
-        this.structure.shedAll();
-      }
       if (this.sinking < 0 && this.dyingFor > CORPSE_SECONDS) this.sinking = 0;
       if (this.sinking >= 0) {
         this.sinking += dt;

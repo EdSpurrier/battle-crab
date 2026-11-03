@@ -46,6 +46,9 @@ src/player.ts   the player: position, facing (the camera's while moving), veloci
                 (impulse / mass) adds a push the sand takes back, an upward part throws it, a corpse also tumbles and spins
 src/debris.ts   Debris (debrisFor(renderer): one pool, MAX_CHUNKS 260): irregular chunks (shell, wood, metal, stone, sand,
                 glowing ember) that fly, tumble, bounce, skid and shrink away in about 3 s; burst(at, stuff, count, speed, size, dir?)
+src/fallApart.ts fallApart: a crab cracking comes apart at once (Player.onCrack): every piece off its shell (shedAll), its
+                claws broken off (Crab.shedClaws: copies of arm, forearm, palm and jaws tumbling away as Loot rubble, 12 s), broken
+                shell flying in its own colours (debris palette); the body and shell stay together as the corpse
 src/physics.ts  Pushable (shove), radialImpulse (a burst's push on a point: outward, up, less with distance), withLength
 src/waves.ts    Waves (battle or hell rules): kills, stage (every 5 / 6 cracks), onKill (stage news), reset on death,
                 wantEnemies, firstKind, nextKind (the stage's roster: marchers in threes, a boss every fifth stage),
@@ -161,6 +164,9 @@ the random-build crabs always, march crabs from stage 2, gunners and skirmishers
 player cracked ends the run: back to stage one ("Run over at stage N").
 
 ## Deaths
+A crab comes apart the moment it cracks (fallApart.ts): its build is flung off, its claws break off, its shell shatters
+into chunks in its own colours; the body and shell stay one, the corpse. The player is whole again on the beach
+(`Structure.restore`: the build as made, picked-up weapons not kept; `Crab.revive` shows the claws).
 The killing blow picks the death (`Combatant.hurt(amount, kind, from)`, HitKind bullet / blow / blast / flame / nip;
 the Arsenal sets the kind where each hit begins, `cause`): `Crab.collapse(style, away)`. side (bullets, blows): keels
 over away from the shot; blast: thrown (a push within FRESH_SECONDS of cracking goes DEATH_THROW times as far, DEATH_LIFT
@@ -191,6 +197,10 @@ a round crab pushed out of turned boxes each frame (`unblock`), so a crab can hi
   Sprinting spends stamina (`Player.stamina`, 0..1: 7 s unladen × weightFactor, back in 5 s; at 0 the crab is
   winded until a third is back); the thin bar under the life bar, magenta when winded.
   The gait steps slowly with long strides (STEP_TRIGGER, STEP_SECONDS, STEP_LEAD in crab.ts).
+- Unlimited ammunition (settings, Game: on by default; `Arsenal.infinite`; Bullet Hell always).
+- The bommy knocker: held, it whirls its ball round the crab at shell height (spinning up over KNOCK_SPIN_UP to
+  KNOCK_SPIN_MAX rad/s, the chain KNOCK_CHAIN × the pole's and never stretched), hitting what it sweeps through; let go,
+  the ball flies on round and swings to rest.
 - Firing, two schemes (settings, Controls.fire): simple (the default) fires every weapon on the left button and nips
   with the claws on the right (held: a nip every 0.4 s); action slots is the one below. Bullet Hell keeps its own two buttons.
 - Actions: four slots (main.ts `actions()`): the claws first when they work, then the weapons on the shell in
