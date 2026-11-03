@@ -100,7 +100,8 @@ function spawnPoint(): Vec3 {
   }
   return [4, 0, 4];
 }
-for (let i = 0; i < 3; i++) enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot, { kind: waves.firstKind() }));
+// The beach opens with the first stage's opponents (as many as it wants, of its kinds).
+for (let i = 0; i < waves.wantEnemies(); i++) enemies.push(new Enemy(renderer, ground, world, spawnPoint(), loot, { kind: waves.firstKind() }));
 const lifeBars = new LifeBars(document.body);
 const cracked = document.createElement('div');
 cracked.id = 'cracked';

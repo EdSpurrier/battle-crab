@@ -174,8 +174,9 @@ guns and stage one. Loose weapons cannot be picked up in this mode.
 ## Waves
 Both modes ramp up (waves.ts). The gauge down the right shows the stage, a bar to the next, its colour cyan to magenta
 with the heat. Each stage brings more opponents, tougher ones (+8 % armour a stage), quicker replacements, new kinds
-and a boss every fifth stage. The battle's rules: a stage every 5 cracks, 3 opponents then one more a stage (up to 9),
-the random-build crabs always, march crabs from stage 2, gunners and skirmishers 3, bruisers 4, rocketeers 5. The
+and a boss every fifth stage. The battle's rules: a stage every 5 cracks, 2 opponents then one more a stage (up to 9); stage 1 is little crabs only
+(`scout`: 0.7 size, soft, one machine gun), the full-size random-build crabs and the march join at 2, gunners and
+skirmishers 3, bruisers 4, rocketeers 5. Opponents have half the health their shell and kind give (enemy.ts ENEMY_HEALTH). The
 player cracked ends the run: back to stage one ("Run over at stage N").
 
 ## Deaths

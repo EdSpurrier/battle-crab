@@ -1,12 +1,13 @@
 import type { ClawKind, PieceKind, ShellId } from './shell';
 
 /**
- * The kinds of opponent. The battle fields `random` crabs (a random shell, build and claws); Bullet
- * Hell fields the rest in waves, each playing differently: marchers swarm and nip, gunners hang
+ * The kinds of opponent. The battle opens with little crabs (`scout`: small, soft, one
+ * machine gun), then `random` crabs (a random shell, build and claws) and the rest in waves; Bullet Hell
+ * fields the rest in waves, each playing differently: marchers swarm and nip, gunners hang
  * back and shoot, skirmishers dart in with flame, bruisers lumber in under heavy guns, rocketeers
  * shell from afar, and a boss brings all of it at once.
  */
-export type EnemyKindId = 'random' | 'marcher' | 'gunner' | 'skirmisher' | 'bruiser' | 'rocketeer' | 'boss';
+export type EnemyKindId = 'random' | 'scout' | 'marcher' | 'gunner' | 'skirmisher' | 'bruiser' | 'rocketeer' | 'boss';
 
 export interface EnemyKind {
   id: EnemyKindId;
@@ -34,6 +35,7 @@ export interface EnemyKind {
 
 export const ENEMY_KINDS: Record<EnemyKindId, EnemyKind> = {
   random: { id: 'random', name: 'Crab', scale: 1, armor: 1, speed: 1, keep: 9, range: 26, burst: 0.9, rest: 3, weapons: [], shell: 'whelk', claws: 'own', tint: [0.55, 0.7, 1, 0.45], damageScale: 0.3 },
+  scout: { id: 'scout', name: 'Little crab', scale: 0.7, armor: 0.6, speed: 1.15, keep: 8, range: 18, burst: 0.6, rest: 2.8, weapons: ['machinegun'], shell: 'nautilus', claws: 'own', tint: [0.55, 0.85, 1, 0.45], damageScale: 0.22 },
   marcher: { id: 'marcher', name: 'March crab', scale: 0.55, armor: 0.3, speed: 1.35, keep: 0, range: 3, burst: 1, rest: 0.4, weapons: [], shell: 'nautilus', claws: 'own', tint: [0.6, 1, 0.5, 0.5], damageScale: 0.3 },
   gunner: { id: 'gunner', name: 'Gunner', scale: 1, armor: 1, speed: 1, keep: 9, range: 24, burst: 0.9, rest: 2.2, weapons: ['machinegun'], shell: 'whelk', claws: 'own', tint: [0.55, 0.7, 1, 0.45], damageScale: 0.3 },
   skirmisher: { id: 'skirmisher', name: 'Skirmisher', scale: 0.85, armor: 0.8, speed: 1.5, keep: 4, range: 7, burst: 1.2, rest: 1.5, weapons: ['flamethrower'], shell: 'nautilus', claws: 'tiny', tint: [1, 0.6, 0.2, 0.5], damageScale: 0.35 },
