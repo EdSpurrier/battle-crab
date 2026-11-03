@@ -66,6 +66,8 @@ src/enemyKinds.ts the kinds of opponent: random (random builds) and the wave kin
 src/gamepad.ts  GamepadInput: the first connected pad (standard mapping) polled each frame: left stick moves, right
                 stick faces (top down: the aim marker; 3rd person: orbits), LB / RB / LT / RT fire action slots 1-4 outright,
                 left stick pressed in runs, A jumps; main.ts merges it over the keys and mouse (PadState)
+src/controlsPanel.ts the controls on screen, bottom left: a key cap per key and what it does, rebuilt for the scheme in
+                use (topdown / 3rd person, simple / action slots, Bullet Hell, a gamepad); H folds it (kept in localStorage)
 src/pick.ts     pickGround: the ground point under a screen position (ray march + bisection on the heightfield)
 src/overlayShapes.ts  bands on the ground (rings, footprints, the aim marker) as overlay data
 src/models.ts   the model viewer (models.html): every .glb in Models/ (import.meta.glob), clips, turntable, wireframe
@@ -193,7 +195,8 @@ Shots never hit their shooter. Solid props (rocks, boulders, driftwood: `world.o
 a round crab pushed out of turned boxes each frame (`unblock`), so a crab can hide behind a rock.
 
 ## Game feel decided so far
-- Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`). Space jumps.
+- Walk 4.8 units a second, run (Shift) 1.75 × that (`Player.speed`, `Player.runFactor`). Space jumps; with a
+  direction pushed it is a lunge that way (LUNGE 6.5 at walking pace, on `Player.push`, a puff of sand), straight up without.
   Sprinting spends stamina (`Player.stamina`, 0..1: 7 s unladen × weightFactor, back in 5 s; at 0 the crab is
   winded until a third is back); the thin bar under the life bar, magenta when winded.
   The gait steps slowly with long strides (STEP_TRIGGER, STEP_SECONDS, STEP_LEAD in crab.ts).

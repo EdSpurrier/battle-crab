@@ -2,6 +2,7 @@ import { Renderer, type Vec3 } from 'gridfall-engine';
 import { ThirdPersonCamera } from './camera';
 import { crabBox } from './combat';
 import { Controls } from './controls';
+import { ControlsPanel } from './controlsPanel';
 import { Enemy } from './enemy';
 import { GamepadInput } from './gamepad';
 import { buildGround } from './ground';
@@ -312,17 +313,11 @@ window.addEventListener('blur', () => {
 // on the click of the same gesture, so the press that gives the window focus is enough. Where locking
 // is refused (some embedded browsers) the bare mouse movement still orbits. Topdown keeps the cursor.
 const locked = () => document.pointerLockElement === canvas;
-const THIRD = 'mouse to look · 1-4 pick an action, left button fires, right button aims · WASD to walk · Shift to run · Space to jump · Tab for settings · C for topdown';
-const TOP = 'mouse to aim · 1-4 pick an action, left button fires, right button zooms · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person';
-const THIRD_SIMPLE = 'mouse to look · left button fires every weapon, right button nips · WASD to walk · Shift to run · Space to jump · Tab for settings · C for topdown';
-const TOP_SIMPLE = 'mouse to aim · left button fires every weapon, right button nips · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person';
-const PAD = 'gamepad: left stick moves, right stick faces, LB / RB / LT / RT fire the slots, press the left stick to run, A jumps';
-const HELL_TOP = 'mouse to aim · left button fires, right button fires the secondary · WASD to move · Shift to run · Space to jump · Q/E turn the view · Tab for settings · C for 3rd person · power-ups drop where crabs crack';
+/** The controls panel down in the bottom-left corner (controlsPanel.ts), for the scheme in use; the top bar keeps a short tip. */
+const controlsPanel = new ControlsPanel(document.body);
 function showHint(): void {
-  if (HELL && controls.topDown) hint.textContent = HELL_TOP;
-  else if (controls.topDown) hint.textContent = simple() && !HELL ? TOP_SIMPLE : TOP;
-  else hint.textContent = `${simple() && !HELL ? THIRD_SIMPLE : THIRD} · ${locked() ? 'Esc to release the mouse' : 'click to capture the mouse'}`;
-  if (gamepad.connected) hint.textContent += ` · ${PAD}`;
+  controlsPanel.update({ topDown: controls.topDown, simple: simple(), hell: HELL, pad: gamepad.connected, locked: locked(), claws: clawsWork });
+  hint.textContent = HELL ? 'power-ups drop where crabs crack' : 'H hides the controls';
 }
 controls.onModeChange = (mode) => {
   crosshair.hidden = mode === 'topdown';
@@ -343,7 +338,7 @@ function capture(e: Event): void {
   if (asked instanceof Promise) {
     asked.catch((err: unknown) => {
       const name = err instanceof Error ? err.name : '';
-      if (name === 'SecurityError') hint.textContent = `${THIRD} (this browser will not capture the mouse)`;
+      if (name === 'SecurityError') hint.textContent = 'this browser will not capture the mouse: move it to look';
       else console.warn('pointer lock refused this time:', err);
     });
   }
@@ -512,6 +507,7 @@ function frame(now: number): void {
   if (frames % 15 === 0) {
     showActions();
     showGauge();
+    showHint();
   }
   // The opponents fight the player (none of them while the player is down); a cracked one is replaced after a while.
   for (const e of enemies) e.update(dt, player.alive ? player : null);

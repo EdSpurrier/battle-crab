@@ -10,6 +10,8 @@ import { SHELLS, weightFactor, type ClawKind, type ShellType } from './shell';
 /** A full sprint lasts this long unladen (weight shortens it: × weightFactor), and comes all the way back in STAMINA_REST. */
 const STAMINA_SECONDS = 7;
 const STAMINA_REST = 5;
+/** A jump with a direction pushed is a lunge: this much speed (units a second at the crab's walking pace) thrown the way it goes. */
+const LUNGE = 6.5;
 /** A push within this long of cracking (the killing blow's) throws the corpse DEATH_THROW times as far; a burnt one smokes BURN_SECONDS. */
 const FRESH_SECONDS = 0.15;
 const DEATH_THROW = 2;
@@ -219,7 +221,17 @@ export class Player implements Pushable {
       this.crab.setTeam(this.invincibleFor > 0 ? [1, 0.85, 0.3, pulse] : null);
     }
     // Jumping: straight up off the ground, down under gravity; the walk carries on in the air.
-    if (jump && !this.airborne) this.vy = this.jumpSpeed;
+    if (jump && !this.airborne) {
+      this.vy = this.jumpSpeed;
+      // Pushing a way: a lunge that way (out of trouble, or in at someone), as quick as the crab is; no way, straight up.
+      if (len > 1e-4) {
+        const k = (LUNGE * Math.min(1, len) * this.speed) / (4.8 * len);
+        this.push[0] += dir[0] * k;
+        this.push[2] += dir[2] * k;
+        const p = this.position;
+        this.renderer.particles.emit(p[0], p[1] + 0.1, p[2], { count: 14, color: [0.8, 0.72, 0.52], colorTo: [0.68, 0.6, 0.45], speed: 2.2, dir: [-dir[0], 0.3, -dir[2]], cone: 0.6, life: 0.7, size: 0.32, drag: 2, alpha: 0.7, fadeCurve: 'down', sizeCurve: 'up', shape: 'smoke' });
+      }
+    }
     if (this.airborne) {
       this.vy -= this.gravity * dt;
       this.air = Math.max(0, this.air + this.vy * dt);
