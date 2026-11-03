@@ -19,7 +19,7 @@ import { MistSet } from './mist';
 import { Pickups } from './pickups';
 import { Player } from './player';
 import { Props } from './props';
-import { CLAWS, MAX_ACTIONS, loadBuild, maxWeapons, pieceType, shellType } from './shell';
+import { CLAWS, MAX_ACTIONS, MAX_CARRIED, loadBuild, pieceType, shellType } from './shell';
 import { Structure, type Mounted } from './structure';
 import { Arsenal } from './weapons';
 
@@ -107,6 +107,9 @@ cracked.id = 'cracked';
 cracked.hidden = true;
 document.body.appendChild(cracked);
 let deadFor = 0;
+/** The quarter of its health the player is in (a weapon comes off each time it drops one). */
+const HEALTH_STAGES = 4;
+let healthStage = HEALTH_STAGES;
 let kills = 0;
 /** The cracked crabs already counted (a corpse lies on after its kill is scored), and how many corpses may lie about. */
 const counted = new Set<Enemy>();
@@ -156,8 +159,17 @@ type Action = { kind: 'claws' } | { kind: 'weapon'; m: Mounted };
 const clawsWork = CLAWS[build.claws].works;
 /** The simple firing scheme (the default): the left button holds every weapon's trigger, the right button nips while held. */
 const simple = () => controls.fire === 'simple';
+function allActions(): Action[] {
+  return [...(clawsWork ? [{ kind: 'claws' } as Action] : []), ...structure.weapons.map((m): Action => ({ kind: 'weapon', m }))];
+}
 function actions(): Action[] {
-  return [...(clawsWork ? [{ kind: 'claws' } as Action] : []), ...structure.weapons.map((m): Action => ({ kind: 'weapon', m }))].slice(0, MAX_ACTIONS);
+  return allActions().slice(0, MAX_ACTIONS);
+}
+/** Weapons past the four slots (a stack picked up on the beach): they fire along with the last slot. */
+function extras(): Mounted[] {
+  return allActions()
+    .slice(MAX_ACTIONS)
+    .flatMap((a) => (a.kind === 'weapon' ? [a.m] : []));
 }
 const PAD_LABELS = ['LB', 'RB', 'LT', 'RT'];
 let action = 0;
@@ -187,7 +199,8 @@ function showActions(): void {
       const left = ammo === Infinity ? '' : ` <i>${Math.ceil(ammo)}</i>`;
       const name = a.kind === 'weapon' ? Arsenal.nameOf(a.m) : CLAWS[build.claws].name;
       const key = gamepad.connected ? PAD_LABELS[i] : simple() ? (a.kind === 'claws' ? 'RMB' : 'LMB') : String(i + 1);
-      el.innerHTML = `<b>${key}</b> ${name}${left}`;
+      const more = i === MAX_ACTIONS - 1 && extras().length ? ` <i class="more">+${extras().length}</i>` : '';
+      el.innerHTML = `<b>${key}</b> ${name}${left}${more}`;
       if (ammo === 0) el.classList.add('empty');
       return el;
     }),
@@ -253,6 +266,7 @@ function fireAll(down: boolean): void {
 function fireAction(i: number, down: boolean): void {
   const a = actions()[i];
   if (!a) return;
+  if (i === MAX_ACTIONS - 1) for (const m of extras()) arsenal.fire(m, down);
   if (a.kind === 'weapon') arsenal.fire(a.m, down);
   else if (down && nipCool <= 0) {
     nip();
@@ -352,7 +366,10 @@ window.addEventListener('mousedown', (e) => {
     if (hell) hell.firePrimary(true);
     else if (simple()) fireAll(true);
     else if (actions()[action]?.kind === 'claws') nip();
-    else arsenal.trigger(true);
+    else {
+      arsenal.trigger(true);
+      if (action === MAX_ACTIONS - 1) for (const m of extras()) arsenal.fire(m, true);
+    }
   }
   if (e.button === 2) {
     if (hell) hell.fireSecondary(true);
@@ -364,7 +381,10 @@ window.addEventListener('mouseup', (e) => {
   if (e.button === 0) {
     if (hell) hell.firePrimary(false);
     else if (simple()) fireAll(false);
-    else arsenal.trigger(false);
+    else {
+      arsenal.trigger(false);
+      for (const m of extras()) arsenal.fire(m, false);
+    }
   }
   if (e.button === 2) {
     if (hell) hell.fireSecondary(false);
@@ -496,10 +516,14 @@ function frame(now: number): void {
   // Loose weapons: walk over one with a slot free (and a cell for it) and it is yours, with a full load.
   const refused = loot.update(dt, player.alive ? player.position : null, 1.4, (kind) => {
     if (hell || !structure.pickUp(kind)) return false;
-    say(`Picked up a ${pieceType(kind).name.toLowerCase()}`);
+    say(`Picked up a ${pieceType(kind).name.toLowerCase()} · ${structure.weapons.length} / ${MAX_CARRIED}`);
     return true;
   });
-  if (refused && !hell && noticeFor <= 0) say(`${structure.weapons.length >= maxWeapons(build.claws) ? 'No slot free' : 'No room on the deck'} for the ${pieceType(refused).name.toLowerCase()}`);
+  if (refused && !hell && noticeFor <= 0) say(`Carrying ${MAX_CARRIED} already: no room for the ${pieceType(refused).name.toLowerCase()}`);
+  // A hard knock through each quarter of the crab's health shoots its top weapon off (a stacked one first).
+  const healthNow = Math.ceil((player.health / player.maxHealth) * HEALTH_STAGES);
+  if (player.alive && !hell && healthNow < healthStage && structure.shedTop()) say('A weapon was shot off!');
+  healthStage = player.alive ? healthNow : HEALTH_STAGES;
   if (noticeFor > 0) {
     noticeFor -= dt;
     if (noticeFor <= 0) notice.hidden = true;

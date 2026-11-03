@@ -28,6 +28,8 @@ interface Item {
   /** Drawn this many times its mesh's size; rests this high over the sand. */
   scale: number;
   lift: number;
+  /** Seconds before it can be picked up (a weapon just knocked off is not caught again at once). */
+  wait: number;
 }
 
 /** A loose bit's own size, rest height and how long it lies (rubble's defaults otherwise). */
@@ -35,6 +37,8 @@ export interface LootOptions {
   scale?: number;
   lift?: number;
   seconds?: number;
+  /** Seconds before a weapon can be picked up (default WEAPON_WAIT). */
+  wait?: number;
 }
 
 const GRAVITY = 20;
@@ -42,6 +46,8 @@ const GRAVITY = 20;
 const RUBBLE_SECONDS = 25;
 const MAX_WEAPONS_LYING = 12;
 const H = CELL / 2;
+/** A weapon that has come off cannot be picked up for this long. */
+const WEAPON_WAIT = 2.5;
 
 export class Loot {
   private readonly items: Item[] = [];
@@ -50,7 +56,7 @@ export class Loot {
 
   /** A piece coming off at `pos` (its instance's origin) with velocity `vel`; `kind` null for rubble. */
   add(kind: PieceKind | null, fixed: Instance, moving: Item['moving'], pos: Vec3, vel: Vec3, options: LootOptions = {}): void {
-    this.items.push({ kind, fixed, moving, pos: [pos[0], pos[1], pos[2]], vel: [vel[0], vel[1], vel[2]], spin: Math.random() * Math.PI * 2, yaw: Math.random() * Math.PI * 2, rest: -1, upright: 0, left: options.seconds ?? RUBBLE_SECONDS, sunk: 0, phase: Math.random() * 7, scale: options.scale ?? 1, lift: options.lift ?? H });
+    this.items.push({ kind, fixed, moving, pos: [pos[0], pos[1], pos[2]], vel: [vel[0], vel[1], vel[2]], spin: Math.random() * Math.PI * 2, yaw: Math.random() * Math.PI * 2, rest: -1, upright: 0, left: options.seconds ?? RUBBLE_SECONDS, sunk: 0, phase: Math.random() * 7, scale: options.scale ?? (kind ? 1.3 : 1), lift: options.lift ?? H, wait: options.wait ?? WEAPON_WAIT });
     const weapons = this.items.filter((i) => i.kind);
     if (weapons.length > MAX_WEAPONS_LYING) {
       const oldest = weapons[0];
@@ -109,10 +115,18 @@ export class Loot {
         it.rest += dt;
         it.pos[1] = g;
         if (it.kind) {
-          // A weapon: it rights itself and bobs a little, so it is seen.
+          // A weapon: it rights itself, turns slowly and bobs, under a column of rising sparks, so it is seen from afar.
           it.upright = Math.min(1, it.upright + dt * 2.5);
           it.phase += dt * 2;
-          if (at && it.upright >= 1 && Math.hypot(at[0] - it.pos[0], at[2] - it.pos[2]) < reach) {
+          if (it.upright >= 1) it.yaw += dt * 1.4;
+          it.wait = Math.max(0, it.wait - dt);
+          if (Math.random() < dt * 22) {
+            const a = Math.random() * Math.PI * 2;
+            const r = 0.5 + Math.random() * 0.3;
+            this.renderer.particles.emit(it.pos[0] + Math.cos(a) * r, it.pos[1] + 0.1, it.pos[2] + Math.sin(a) * r, { count: 1, color: [0.6, 2.4, 3], colorTo: [0.2, 0.8, 1.4], speed: 0.2, up: 3.2, life: 1.1, size: 0.07, gravity: -1, fadeCurve: 'down', sizeCurve: 'none', stretch: 3, shape: 'spark' });
+          }
+          if (Math.random() < dt * 3) this.renderer.particles.emit(it.pos[0], it.pos[1] + 0.05, it.pos[2], { count: 1, color: [0.3, 1.6, 2], colorTo: [0.1, 0.5, 0.8], speed: 0, life: 0.8, size: 1.5, alpha: 0.35, fadeCurve: 'down', sizeCurve: 'up', shape: 'disc' });
+          if (at && it.upright >= 1 && it.wait <= 0 && Math.hypot(at[0] - it.pos[0], at[2] - it.pos[2]) < reach) {
             if (take(it.kind)) {
               this.renderer.particles.emit(it.pos[0], it.pos[1] + 0.3, it.pos[2], { count: 24, color: [0.7, 1, 1], colorTo: [0.3, 0.9, 1], speed: 2.5, up: 2, life: 0.6, size: 0.08, gravity: 3, fadeCurve: 'down', shape: 'spark' });
               this.remove(k);
@@ -142,13 +156,13 @@ export class Loot {
     const out: PointLight[] = [];
     for (const it of this.items) {
       if (!it.kind || it.rest < 0) continue;
-      out.push({ x: it.pos[0], y: it.pos[1] + 0.9, z: it.pos[2], radius: 3, r: 0.3, g: 0.95, b: 1, intensity: 5 + 3 * Math.sin(it.phase) });
+      out.push({ x: it.pos[0], y: it.pos[1] + 1, z: it.pos[2], radius: 5, r: 0.3, g: 0.95, b: 1, intensity: 16 + 7 * Math.sin(it.phase * 1.5) });
     }
     return out;
   }
 
   private pose(it: Item): void {
-    const bob = it.kind ? 0.06 * (1 + Math.sin(it.phase)) * it.upright : 0;
+    const bob = it.kind ? (0.15 + 0.15 * Math.sin(it.phase)) * it.upright : 0;
     const sink = it.sunk * (it.lift * 2 + 0.4);
     const t = translation(it.pos[0], it.pos[1] + bob - sink, it.pos[2]);
     // Tumbling: turning every way; at rest, a weapon eases to standing on its base, rubble lies as it fell.
