@@ -1,6 +1,7 @@
 import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, scaling, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { shatter, type Obstacle } from './impacts';
 import type { Loot } from './loot';
+import { sfx } from './sound';
 import { CELL, MATERIALS, MAX_CARRIED, burns, canPlace, cellCentre, maxWeapons, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type PieceKind, type ShellBuild, type ShellType } from './shell';
 
 /**
@@ -527,7 +528,9 @@ export class Structure {
     } else this.remove(instances);
     // It bursts as it goes: a shower of what it was made of (weapons: iron).
     const piece = this.build.pieces[i];
-    shatter(this.renderer, [pos[0], pos[1] + 0.15, pos[2]], pieceType(piece.kind).weapon ? 'metal' : piece.material ?? 'wood', 3);
+    const stuff = pieceType(piece.kind).weapon ? 'metal' : piece.material ?? 'wood';
+    shatter(this.renderer, [pos[0], pos[1] + 0.15, pos[2]], stuff, 3);
+    sfx.play(stuff === 'wood' ? 'break.wood' : stuff === 'metal' ? 'break.metal' : 'break.shell', pos, 0.8);
     const w = this.weapons.findIndex((x) => x.index === i);
     if (w >= 0) this.weapons.splice(w, 1);
   }

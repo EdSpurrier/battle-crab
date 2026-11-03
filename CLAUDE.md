@@ -12,6 +12,7 @@ forked per game.
 ## Commands
 ```bash
 npm install          # installs gridfall-engine from GitHub at the tag in package.json (and builds it)
+npm run sfx          # copy the sounds (sfx.json) from Game Assets into public/sfx (dev and build run it first)
 npm run dev          # http://localhost:5182 (the battle), /?mode=hell (Bullet Hell), /build.html (the Battle Shell), /editor.html (the map maker), /models.html (models)
 npm run dev:engine   # the same, but on ../gridfall-engine's source (an engine feature being built next door)
 npm run typecheck    # tsc --noEmit
@@ -49,6 +50,10 @@ src/debris.ts   Debris (debrisFor(renderer): one pool, MAX_CHUNKS 260): irregula
 src/fallApart.ts fallApart: a crab cracking comes apart at once (Player.onCrack): every piece off its shell (shedAll), its
                 claws broken off (Crab.shedClaws: copies of arm, forearm, palm and jaws tumbling away as Loot rubble, 12 s), broken
                 shell flying in its own colours (debris palette); the body and shell stay together as the corpse
+src/sound.ts    Sound (`sfx`, one for the game): Web Audio; loads public/sfx/manifest.json on the first click or key;
+                play(event, at?, volume?, rate?): a random variation, pitched a little, quieter with distance from
+                the listener (the player), panned by the camera's right, busy events rate-limited (GAPS), 28 voices at
+                most; hold(id, event, at?) keeps a loop going while called each frame (flame, winch, the sea); volume, mute
 src/physics.ts  Pushable (shove), radialImpulse (a burst's push on a point: outward, up, less with distance), withLength
 src/waves.ts    Waves (battle or hell rules): kills, stage (every 5 / 6 cracks), onKill (stage news), reset on death,
                 wantEnemies, firstKind, nextKind (the stage's roster: marchers in threes, a boss every fifth stage),
@@ -129,6 +134,16 @@ src/ui.css      the look, shared by every page: cyberpunk sci-fi (dark clipped p
 `npm run deploy` builds with `--base=/battle-crab/` and pushes `dist/` to the `gh-pages` branch
 (the `gh-pages` package); GitHub Pages serves that branch at https://edspurrier.github.io/battle-crab/.
 The build runs locally, so the private engine needs no token in CI.
+
+## Sound
+The game's sounds are picked from the Sound FX Library (`../Sound FX Library`, a catalogue of the asset-store packs and
+the user's own recordings in the shared Game Assets folder). `sfx.json` (committed) lists each event (`cannon.fire`,
+`explosion`, `hit.shell`, `pickup.weapon`, `ambience.sea`...) with what it is for, a volume and a few variations (the
+library's sound id, name and path under Game Assets/sounds). `scripts/sfx.mjs` copies them into `public/sfx/` (gitignored,
+like the library's own audio: asset-store files stay out of the public repo) with a `manifest.json`; dev and build run it,
+so the deployed game carries them. To change a sound, edit `sfx.json` (a library id, name and rel from
+`../Sound FX Library/data/library.json`) and run `npm run sfx`. Without the Game Assets folder the game is silent.
+Settings, Sound: on/off and volume.
 
 ## Assets
 `Models/*.glb` are the game's source models (the siege snail rig is the first); the model viewer lists

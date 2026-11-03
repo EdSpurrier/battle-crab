@@ -6,13 +6,14 @@
   "author": "Slayd Games",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:engine": "cross-env-shell ENGINE_SOURCE=1 vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "node scripts/sfx.mjs && vite",
+    "dev:engine": "node scripts/sfx.mjs && cross-env-shell ENGINE_SOURCE=1 vite",
+    "build": "node scripts/sfx.mjs && tsc --noEmit && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
-    "build:pages": "tsc --noEmit && vite build --base=/battle-crab/",
-    "deploy": "npm run build:pages && gh-pages -d dist -b gh-pages --nojekyll -m \"Deploy to GitHub Pages\""
+    "build:pages": "node scripts/sfx.mjs && tsc --noEmit && vite build --base=/battle-crab/",
+    "deploy": "npm run build:pages && gh-pages -d dist -b gh-pages --nojekyll -m \"Deploy to GitHub Pages\"",
+    "sfx": "node scripts/sfx.mjs"
   },
   "dependencies": {
     "gridfall-engine": "github:EdSpurrier/gridfall-engine#v0.76.0"

@@ -4,6 +4,7 @@ import { ENEMY_KINDS, type EnemyKind } from './enemyKinds';
 import type { Ground } from './ground';
 import type { World } from './impacts';
 import { fallApart } from './fallApart';
+import { sfx } from './sound';
 import type { Vec3 as V3 } from 'gridfall-engine';
 import type { Loot } from './loot';
 import { Player } from './player';
@@ -222,6 +223,7 @@ export class Enemy implements Combatant {
       } else if (firing && dist < 2.2 * Math.max(1, kind.scale) && Math.random() < dt * 1.3 && CLAWS[this.build.claws].works) {
         // A nip: half the claws' bite, by the crab's size; a swarm of small ones adds up, so each is gentler still.
         this.crab.snapNext();
+        sfx.play('nip', p.position);
         target.hurt(CLAWS[this.build.claws].damage * 0.5 * kind.scale * (kind.scale < 1 ? 0.5 : 1), 'nip', p.position);
       }
     } else this.arsenal.releaseAll();
