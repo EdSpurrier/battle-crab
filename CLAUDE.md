@@ -44,6 +44,8 @@ src/editor.ts   the map maker (editor.html): orbit camera; an icon toolbar down 
                 Download / Load / New in the toolbar
 src/player.ts   the player: position, facing (the camera's while moving), velocity; drives the crab; Pushable: shove
                 (impulse / mass) adds a push the sand takes back, an upward part throws it, a corpse also tumbles and spins
+src/debris.ts   Debris (debrisFor(renderer): one pool, MAX_CHUNKS 260): irregular chunks (shell, wood, metal, stone, sand,
+                glowing ember) that fly, tumble, bounce, skid and shrink away in about 3 s; burst(at, stuff, count, speed, size, dir?)
 src/physics.ts  Pushable (shove), radialImpulse (a burst's push on a point: outward, up, less with distance), withLength
 src/waves.ts    Waves (battle or hell rules): kills, stage (every 5 / 6 cracks), onKill (stage news), reset on death,
                 wantEnemies, firstKind, nextKind (the stage's roster: marchers in threes, a boss every fifth stage),
@@ -140,7 +142,12 @@ Cracked opponents sometimes leave a magenta power-up where they fell (at least e
 a stage on the primary or (once the primary has one) the grenades. Stages stack: heavier rounds, twin barrels, rapid
 fire, a trident at 45°, five-way, explosive rounds, a minigun rate, seven-way, a ring of twelve streams, then "Overkill"
 over and over; the grenades go bigger bang, double shot, quick recharge, cluster (bomblets), triple spread, heavy
-grenades, carpet, then "Armageddon" over and over. The guns are drawn bigger with each stage (`Mounted.grow`, up to 2.4).
+grenades, carpet, then "Armageddon" over and over.
+Grenades are olive pills with a brass band, tumbling end over end; they bounce off sand, rocks and props (GRENADE_BOUNCE
+0.62) and go off on the fuse (1.9 s), or at once on a crab or a piece of one: a white flash, a rolling fireball, a
+shock ring of dust to the blast's edge, a black smoke column, sparks, sand clods and embers (debris.ts), a hard light and
+a camera shake (`ThirdPersonCamera.shake`, from World.blasts by distance). A cannonball's landing throws a dust ring out to
+its push radius. Every hit throws chunks of what it hit (Arsenal.chips: more and faster the harder it hits). The guns are drawn bigger with each stage (`Mounted.grow`, up to 2.4).
 Waves (waves.ts, hell rules): a stage every 6 cracks, more opponents each stage (4, then 1.5 more a stage, up to 12),
 marchers always, gunners from 2, skirmishers 3, bruisers 4, rocketeers 5. Cracked, the run is over: back to the plain
 guns and stage one. Loose weapons cannot be picked up in this mode.
@@ -151,6 +158,14 @@ with the heat. Each stage brings more opponents, tougher ones (+8 % armour a sta
 and a boss every fifth stage. The battle's rules: a stage every 5 cracks, 3 opponents then one more a stage (up to 9),
 the random-build crabs always, march crabs from stage 2, gunners and skirmishers 3, bruisers 4, rocketeers 5. The
 player cracked ends the run: back to stage one ("Run over at stage N").
+
+## Deaths
+The killing blow picks the death (`Combatant.hurt(amount, kind, from)`, HitKind bullet / blow / blast / flame / nip;
+the Arsenal sets the kind where each hit begins, `cause`): `Crab.collapse(style, away)`. side (bullets, blows): keels
+over away from the shot; blast: thrown (a push within FRESH_SECONDS of cracking goes DEATH_THROW times as far, DEATH_LIFT
+times as high), tumbling end over end, legs flailing, landing however it lands; burn: flips onto its back, legs curled and
+twitching, smoking BURN_SECONDS; slump (a nip, some bullets): face down. The corpse's roll and pitch are sprung toward the
+nearest pose its style can rest in (RESTS: a side, its back, face down) and knocked about by every later blow.
 
 ## Physics
 No rigid-body engine: blows push (physics.ts). A Pushable takes an impulse divided by its mass (Player.mass: the load
@@ -175,6 +190,8 @@ a round crab pushed out of turned boxes each frame (`unblock`), so a crab can hi
   Sprinting spends stamina (`Player.stamina`, 0..1: 7 s unladen × weightFactor, back in 5 s; at 0 the crab is
   winded until a third is back); the thin bar under the life bar, magenta when winded.
   The gait steps slowly with long strides (STEP_TRIGGER, STEP_SECONDS, STEP_LEAD in crab.ts).
+- Firing, two schemes (settings, Controls.fire): simple (the default) fires every weapon on the left button and nips
+  with the claws on the right (held: a nip every 0.4 s); action slots is the one below. Bullet Hell keeps its own two buttons.
 - Actions: four slots (main.ts `actions()`): the claws first when they work, then the weapons on the shell in
   build order. Keys 1-4 choose, the left button fires the chosen one (claws take turns: `Crab.snapNext`); the
   right button aims down the barrel (`camera.aimZoom`: narrower view, camera in). A gamepad fires the slots

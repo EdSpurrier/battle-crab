@@ -349,6 +349,13 @@ export class Structure {
     return out;
   }
 
+  /** What piece `i` is made of: its debris. */
+  stuffOf(i: number): 'wood' | 'metal' | 'stone' {
+    const piece = this.build.pieces[i];
+    if (!piece) return 'wood';
+    return pieceType(piece.kind).weapon ? 'metal' : piece.material ?? 'wood';
+  }
+
   /** Whose shell this is on (the crab a blow to a piece pushes); set by the owner. */
   owner: unknown = null;
   /** Nothing comes off this shell (the player's in Bullet Hell: the run must not lose its only gun). */

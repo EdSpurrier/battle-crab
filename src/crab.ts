@@ -94,6 +94,40 @@ const COLLAPSE_REST = 0.22;
 const TUMBLE_SPRING = 14;
 const TUMBLE_DAMP = 3.2;
 
+/**
+ * How a crab dies, from what killed it:
+ * - side: it keels over sideways, away from the blow (bullets, the knocker, a cannonball);
+ * - blast: thrown, tumbling end over end, legs flailing, landing however it lands (often on its back);
+ * - burn: it flips onto its back, legs curling in and twitching (flame);
+ * - slump: it sags forward, face in the sand, claws out in front (a nip).
+ */
+export type DeathStyle = 'side' | 'blast' | 'burn' | 'slump';
+
+/** The rolls a corpse can come to rest at (each repeats every full turn), per style; and its pitch at rest. */
+const RESTS: Record<DeathStyle, number[]> = {
+  side: [COLLAPSE_ROLL, -COLLAPSE_ROLL, Math.PI],
+  blast: [Math.PI, COLLAPSE_ROLL, -COLLAPSE_ROLL],
+  burn: [Math.PI],
+  slump: [0, COLLAPSE_ROLL, -COLLAPSE_ROLL],
+};
+const REST_PITCH: Record<DeathStyle, number> = { side: 0, blast: 0, burn: 0, slump: 0.5 };
+
+/** The rest of `rests` nearest to `roll` (whole turns allowed). */
+function nearestRest(roll: number, rests: number[]): number {
+  let best = rests[0];
+  let bestD = Infinity;
+  for (const r of rests) {
+    const k = Math.round((roll - r) / (Math.PI * 2));
+    const c = r + k * Math.PI * 2;
+    const d = Math.abs(roll - c);
+    if (d < bestD) {
+      bestD = d;
+      best = c;
+    }
+  }
+  return best;
+}
+
 // ---------- small vector helpers (the engine's math gives normalize / cross / dot / sub)
 
 const add = (a: Vec3, b: Vec3): Vec3 => [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -553,30 +587,55 @@ export class Crab {
     }
 
     if (this.collapsing >= 0) {
-      // Cracked: the legs give, the body keels over onto its side and settles on the sand, the claws
-      // drop, the eyes close. The feet stay where they are and slide a little outward.
+      // Cracked: a ragdoll of sorts. The body's roll and pitch are thrown by the killing blow and by every
+      // knock after, and a spring draws them to the nearest pose a corpse can lie in (the death style's:
+      // on a side, on its back, face down). In the air it tumbles freely, legs flailing; down, the legs
+      // splay on the sand, or, on its back, stick up and curl (twitching a while after a burning).
       this.collapsing = Math.min(1, this.collapsing + dt / COLLAPSE_SECONDS);
       const t = this.collapsing;
       const e = t < 0.5 ? 2 * t * t : 1 - 2 * (1 - t) * (1 - t);
-      // Knocked about, the corpse rocks and tumbles: a spring brings the roll back to lying on its side (or
-      // right over, onto its side again, after a hard enough blow) and the pitch back to level.
-      const home = Math.round(this.tumbleRoll / (Math.PI * 2)) * Math.PI * 2;
-      this.rollVel += (-(this.tumbleRoll - home) * TUMBLE_SPRING - this.rollVel * TUMBLE_DAMP) * dt;
-      this.pitchVel += (-this.tumblePitch * TUMBLE_SPRING - this.pitchVel * TUMBLE_DAMP) * dt;
-      this.tumbleRoll += this.rollVel * dt;
-      this.tumblePitch += this.pitchVel * dt;
-      this.roll = COLLAPSE_ROLL * e + this.tumbleRoll;
-      this.pitch = this.tumblePitch;
-      // Turned over, the body rides higher so the shell is not in the sand.
-      const over = Math.min(1, Math.abs(Math.sin(this.tumbleRoll / 2)) + Math.abs(Math.sin(this.tumblePitch)) * 0.7);
-      this.centre[1] = at[1] + COLLAPSE_REST + (HEIGHT - COLLAPSE_REST) * (1 - e) + over * 0.45 * e;
-      const k = 1 - Math.exp(-3 * dt);
-      for (const leg of this.legs) {
-        leg.t = -1;
-        const out = toWorld([leg.rest[0] * 1.35, 0, leg.rest[2] * 1.15], [at[0], 0, at[2]], yaw);
-        out[1] = this.ground(out[0], out[2]);
-        leg.foot = mix(leg.foot, out, k);
+      this.deadFor += dt;
+      const flying = airborne;
+      if (!flying) {
+        const home = nearestRest(this.roll, RESTS[this.style]);
+        this.rollVel += (-(this.roll - home) * TUMBLE_SPRING - this.rollVel * TUMBLE_DAMP) * dt;
+        this.pitchVel += (-(this.pitch - REST_PITCH[this.style] * e) * TUMBLE_SPRING - this.pitchVel * TUMBLE_DAMP) * dt;
+      } else {
+        // Tumbling through the air: little to slow it.
+        this.rollVel *= Math.exp(-0.3 * dt);
+        this.pitchVel *= Math.exp(-0.3 * dt);
       }
+      this.roll += this.rollVel * dt;
+      this.pitch += this.pitchVel * dt;
+      // On its back the shell is under it: the body rides higher. Face down, a little lower.
+      const back = Math.max(0, -Math.cos(this.roll)) * Math.max(0, Math.cos(this.pitch));
+      const sideways = Math.abs(Math.sin(this.roll));
+      const lieAt = COLLAPSE_REST + back * 0.55 + sideways * 0.05;
+      this.centre[1] = at[1] + lieAt + (HEIGHT - lieAt) * (1 - e);
+      const k = 1 - Math.exp(-(flying ? 10 : 4) * dt);
+      const curl = this.style === 'burn' || back > 0.5;
+      // Twitches: fast and big at first, dying away (a burning crab twitches longest).
+      const twitch = Math.exp(-this.deadFor * (this.style === 'burn' ? 0.35 : 1.2)) * (this.style === 'burn' ? 0.18 : 0.08);
+      this.legs.forEach((leg, i) => {
+        leg.t = -1;
+        let want: Vec3;
+        if (flying || curl) {
+          // In body space, carried with the body: flailing (reaching out, kicking) or curled in under it.
+          const w = Math.sin(this.deadFor * (flying ? 17 : 11) + i * 1.9);
+          const reach = flying ? 1.15 : 0.45;
+          const local: Vec3 = [
+            leg.hip[0] + (leg.rest[0] - leg.hip[0]) * reach,
+            flying ? -0.35 + w * 0.25 : -0.2 + w * twitch,
+            leg.hip[2] + (leg.rest[2] - leg.hip[2]) * reach + (flying ? w * 0.2 : 0),
+          ];
+          want = toWorld(local, this.centre, yaw, this.roll, this.pitch);
+        } else {
+          // Lying on a side or face down: the feet splay out on the sand round it, a little twitch in them.
+          want = toWorld([leg.rest[0] * 1.35, 0, leg.rest[2] * 1.15 + Math.sin(this.deadFor * 13 + i) * twitch], [at[0], 0, at[2]], yaw);
+          want[1] = this.ground(want[0], want[2]);
+        }
+        leg.foot = mix(leg.foot, want, k);
+      });
       this.pose(yaw, 0);
       return;
     }
@@ -672,28 +731,73 @@ export class Crab {
     this.pose(yaw, speed);
   }
 
-  /** Cracked: keel over and lie still (COLLAPSE_SECONDS); `revive` stands it up again. */
+  /** Cracked: the corpse's roll and pitch (and their rates), its death style, how long dead; `revive` stands it up again. */
   private collapsing = -1;
   private roll = 0;
   private pitch = 0;
-  /** A corpse knocked about: extra roll and pitch, and their rates. */
-  private tumbleRoll = 0;
-  private tumblePitch = 0;
   private rollVel = 0;
   private pitchVel = 0;
+  private style: DeathStyle = 'side';
+  private deadFor = 0;
 
-  collapse(): void {
-    if (this.collapsing < 0) this.collapsing = 0;
+  /**
+   * Cracked, by a killing blow of `style`. `away` is the way it is knocked (world, along the ground; none:
+   * a random side): a side death keels over away from it, a blast throws it end over end.
+   */
+  collapse(style: DeathStyle = 'side', away?: Vec3): void {
+    if (this.collapsing >= 0) return;
+    this.collapsing = 0;
+    this.style = style;
+    this.deadFor = 0;
+    // The blow in body terms: across (its left positive) and along.
+    const yaw = this.yawNow;
+    let side = Math.random() < 0.5 ? 1 : -1;
+    let fore = 0;
+    if (away && Math.hypot(away[0], away[2]) > 1e-3) {
+      const l = Math.hypot(away[0], away[2]);
+      const ax = away[0] / l;
+      const az = away[2] / l;
+      const across = ax * Math.cos(yaw) - az * Math.sin(yaw);
+      fore = ax * Math.sin(yaw) + az * Math.cos(yaw);
+      // Pushed toward its left (+x), it falls to its left: a negative roll.
+      side = across >= 0 ? -1 : 1;
+      if (Math.abs(across) < 0.2) side = Math.random() < 0.5 ? 1 : -1;
+    }
+    switch (style) {
+      case 'side':
+        this.rollVel = side * 4.5;
+        this.pitchVel = fore * 1.5;
+        break;
+      case 'blast':
+        // End over end: a fast roll and pitch the way it was thrown.
+        this.rollVel = side * (8 + Math.random() * 6);
+        this.pitchVel = (fore >= 0 ? 1 : -1) * (4 + Math.random() * 6);
+        break;
+      case 'burn':
+        // Rears, then flips right over onto its back.
+        this.rollVel = side * 9;
+        this.pitchVel = -1.5;
+        break;
+      case 'slump':
+        this.rollVel = side * 0.6;
+        this.pitchVel = 2.5;
+        break;
+    }
   }
 
   get collapsed(): boolean {
     return this.collapsing >= 1;
   }
 
+  /** How the crab died (side until it does). */
+  get deathStyle(): DeathStyle {
+    return this.style;
+  }
+
   /** A blow to the corpse: `side` across it (its left positive) rolls it, `fore` along it pitches it (units a second). */
   jolt(side: number, fore: number): void {
     if (this.collapsing < 0) return;
-    this.rollVel += side * 1.1;
+    this.rollVel -= side * 1.1;
     this.pitchVel += fore * 0.6;
   }
 
@@ -701,8 +805,12 @@ export class Crab {
     this.collapsing = -1;
     this.roll = 0;
     this.pitch = 0;
-    this.tumbleRoll = this.tumblePitch = this.rollVel = this.pitchVel = 0;
+    this.rollVel = this.pitchVel = 0;
+    this.deadFor = 0;
   }
+
+  /** The yaw the crab faces (last posed). */
+  private yawNow = 0;
 
   /** Snap a pincer: the crab's left (+1) or right (-1) claw thrusts forward and closes. Ignored mid-snap. */
   snap(side: 1 | -1): void {
@@ -828,6 +936,7 @@ export class Crab {
   }
 
   private pose(yaw: number, speed: number): void {
+    this.yawNow = yaw;
     const roll = this.roll;
     const pitch = this.pitch;
     const down = Math.max(0, this.collapsing);
@@ -846,7 +955,7 @@ export class Crab {
     }
     for (const leg of this.legs) {
       const hip = toWorld(leg.hip, this.centre, yaw, roll, pitch);
-      const { joint, end } = twoBone(hip, leg.foot, leg.l1, leg.l2, toWorldDir(leg.pole, yaw));
+      const { joint, end } = twoBone(hip, leg.foot, leg.l1, leg.l2, toWorld(leg.pole, [0, 0, 0], yaw, roll, pitch));
       poseAlong(leg.upper.model, hip, joint, forward);
       poseAlong(leg.lower.model, joint, end, forward);
     }
@@ -860,7 +969,7 @@ export class Crab {
       // Held clear of the ground: under the wrist and under the pincer's tip ahead of it (a mound in front).
       const floor = Math.max(this.ground(target[0], target[2]), this.ground(target[0] + forward[0] * 0.65, target[2] + forward[2] * 0.65)) + CLAW_CLEAR;
       if (target[1] < floor) target[1] = floor;
-      const { joint, end } = twoBone(shoulder, target, claw.l1, claw.l2, toWorldDir(claw.pole, yaw));
+      const { joint, end } = twoBone(shoulder, target, claw.l1, claw.l2, toWorld(claw.pole, [0, 0, 0], yaw, roll, pitch));
       poseAlong(claw.upper.model, shoulder, joint, forward);
       poseAlong(claw.lower.model, joint, end, forward);
       // The pincer carries on along the forearm, the forearm twisted a quarter turn so the jaws open

@@ -1,6 +1,6 @@
 import type { Renderer } from 'gridfall-engine';
 import type { ThirdPersonCamera } from './camera';
-import { CONTROL_MODES, type ControlMode, type Controls } from './controls';
+import { CONTROL_MODES, FIRE_SCHEMES, type ControlMode, type Controls, type FireScheme } from './controls';
 import type { MistSet } from './mist';
 import { SettingsPanel } from './settings';
 
@@ -25,7 +25,9 @@ export function installLook(parent: HTMLElement, renderer: Renderer, camera: Thi
 
   panel
     .section('Controls')
-    .choice('controls.mode', 'Scheme', CONTROL_MODES, () => controls.mode, (v) => controls.setMode(v as ControlMode));
+    .choice('controls.mode', 'Scheme', CONTROL_MODES, () => controls.mode, (v) => controls.setMode(v as ControlMode))
+    .choice('controls.fire', 'Firing', FIRE_SCHEMES, () => controls.fire, (v) => controls.setFire(v as FireScheme));
+  panel.note('Firing, simple: the left button fires every weapon at once, the right button nips. Action slots: 1-4 pick one action, the left button fires it, the right button aims.');
   panel.note('C switches too. 3rd person: mouse orbits, WASD walks along the look. Topdown: WASD moves on the view, the mouse aims a marker on the ground, Q/E turn the view.');
 
   // ---------- distance fog: measured from the eye, so in orthographic (the eye pulled far back) it is pushed back as far.

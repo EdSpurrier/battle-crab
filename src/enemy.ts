@@ -1,8 +1,9 @@
 import type { Renderer, Vec3 } from 'gridfall-engine';
-import { type Combatant } from './combat';
+import { type Combatant, type HitKind } from './combat';
 import { ENEMY_KINDS, type EnemyKind } from './enemyKinds';
 import type { Ground } from './ground';
 import { wreckFx, type World } from './impacts';
+import { debrisFor } from './debris';
 import type { Vec3 as V3 } from 'gridfall-engine';
 import type { Loot } from './loot';
 import { Player } from './player';
@@ -141,8 +142,8 @@ export class Enemy implements Combatant {
   get alive(): boolean {
     return this.player.alive;
   }
-  hurt(amount: number): void {
-    this.player.hurt(amount);
+  hurt(amount: number, kind?: HitKind, from?: V3): void {
+    this.player.hurt(amount, kind, from);
   }
   shove(impulse: V3): void {
     this.player.shove(impulse);
@@ -173,6 +174,7 @@ export class Enemy implements Combatant {
         this.burstDone = true;
         const b = this.crab.body;
         wreckFx(this.renderer, [b[12], b[13] + 0.3, b[14]]);
+        debrisFor(this.renderer).burst([b[12], b[13] + 0.3, b[14]], 'shell', 18 * this.kind.scale, 6, 0.16 * this.kind.scale);
         this.structure.shedAll();
       }
       if (this.sinking < 0 && this.dyingFor > CORPSE_SECONDS) this.sinking = 0;
@@ -224,7 +226,7 @@ export class Enemy implements Combatant {
       } else if (firing && dist < 2.2 * Math.max(1, kind.scale) && Math.random() < dt * 1.3 && CLAWS[this.build.claws].works) {
         // A nip: half the claws' bite, by the crab's size; a swarm of small ones adds up, so each is gentler still.
         this.crab.snapNext();
-        target.hurt(CLAWS[this.build.claws].damage * 0.5 * kind.scale * (kind.scale < 1 ? 0.5 : 1));
+        target.hurt(CLAWS[this.build.claws].damage * 0.5 * kind.scale * (kind.scale < 1 ? 0.5 : 1), 'nip', p.position);
       }
     } else this.arsenal.releaseAll();
     p.update(dt, dir, faceYaw, true, run, jump);
