@@ -320,7 +320,7 @@ export class Structure {
 
   /**
    * Pick a weapon up off the beach (up to MAX_CARRIED in all): it goes on top of the stack above the build,
-   * higher with each one; every second and third one leans out to a side, turned 45 degrees that way.
+   * higher with each one; every second and third one sits out to a side. All of them face forward.
    */
   pickUp(kind: PieceKind): boolean {
     if (this.weapons.length >= MAX_CARRIED) return false;
@@ -331,7 +331,7 @@ export class Structure {
     });
     const n = this.build.pieces.filter((p, k) => p.stacked && !this.parts[k].dead).length;
     const lean = n % 3 === 0 ? 0 : n % 3 === 1 ? 1 : -1;
-    const piece: Piece = { x: (cols - 1) / 2 + lean * STACK_LEAN, y: top, z: (rows - 1) / 2, kind, yaw: lean * 0.5, stacked: true };
+    const piece: Piece = { x: (cols - 1) / 2 + lean * STACK_LEAN, y: top, z: (rows - 1) / 2, kind, yaw: 0, stacked: true };
     this.build.pieces.push(piece);
     this.addPart(piece, this.build.pieces.length - 1);
     this.onChange?.();
