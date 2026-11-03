@@ -69,6 +69,8 @@ const NO_BOOST = plainBoost();
 /** The spiky ball out on its chain. */
 interface Tether {
   phase: 'ready' | 'flying' | 'landed' | 'reeling';
+  /** Seconds in this phase (the held trigger's timing). */
+  since: number;
   pos: Vec3;
   vel: Vec3;
   ball: Instance;
@@ -161,6 +163,9 @@ const SPIKE_SLAM_RADIUS = CANNON_PUSH_RADIUS;
 const SPIKE_SLAM_PUSH = CANNON_PUSH;
 const SPIKE_YANK_RADIUS = 2.4;
 const SPIKE_YANK_PUSH = 7;
+/** Held, the spiky ball goes out again this long after it is home, and is wound in this long after it has come to rest. */
+const SPIKE_AUTO_READY = 0.12;
+const SPIKE_AUTO_DWELL = 0.3;
 const KNOCK_PUNCH = 0.75;
 const BULLET_NUDGE = 0.3;
 /** The spiky ball's chain: links in it. */
@@ -355,7 +360,8 @@ export class Arsenal {
       const cool = this.cooldown.get(w) ?? 0;
       switch (w.piece.kind) {
         case 'cannon':
-          if (pulled && cool <= 0 && this.spend(w, 1)) {
+          // Held, it goes on firing as fast as it reloads (as do the grenade launcher and the fireworks).
+          if ((pulled || held) && cool <= 0 && this.spend(w, 1)) {
             const b = this.boostOf(w);
             this.cooldown.set(w, 1 * b.rate);
             w.kick = 1;
@@ -406,10 +412,10 @@ export class Arsenal {
         case 'knocker':
           break;
         case 'spikeball':
-          this.spikeball(w, pulled, dt, muzzle, facing);
+          this.spikeball(w, pulled, held, dt, muzzle, facing);
           break;
         case 'grenade':
-          if (pulled && cool <= 0 && this.spend(w, 1)) {
+          if ((pulled || held) && cool <= 0 && this.spend(w, 1)) {
             const b = this.boostOf(w);
             this.cooldown.set(w, 0.75 * b.rate);
             this.cooldownMax.set(w, 0.75 * b.rate);
@@ -426,7 +432,7 @@ export class Arsenal {
           }
           break;
         case 'fireworks':
-          if (pulled && cool <= 0 && this.spend(w, 1)) {
+          if ((pulled || held) && cool <= 0 && this.spend(w, 1)) {
             this.cooldown.set(w, 0.7);
             w.kick = 1;
             for (let k = 0; k < 6; k++) {
@@ -615,13 +621,19 @@ export class Arsenal {
 
   // ---------- the spiky ball on its chain
 
-  private spikeball(w: Mounted, pulled: boolean, dt: number, muzzle: Vec3, facing: Vec3): void {
+  private spikeball(w: Mounted, pulledNow: boolean, held: boolean, dt: number, muzzle: Vec3, facing: Vec3): void {
     let t = this.tethers.get(w);
     if (!t) {
-      t = { phase: 'ready', pos: [0, 0, 0], vel: [0, 0, 0], ball: { mesh: this.spikeMesh, model: new Float32Array(16), material: this.ballMaterial, hidden: true }, rope: new Rope(SPIKE_LINKS, CHAIN_REACH / SPIKE_LINKS, muzzle, muzzle), links: this.makeLinks(SPIKE_LINKS), resting: false, hitCool: 0 };
+      t = { phase: 'ready', since: 0, pos: [0, 0, 0], vel: [0, 0, 0], ball: { mesh: this.spikeMesh, model: new Float32Array(16), material: this.ballMaterial, hidden: true }, rope: new Rope(SPIKE_LINKS, CHAIN_REACH / SPIKE_LINKS, muzzle, muzzle), links: this.makeLinks(SPIKE_LINKS), resting: false, hitCool: 0 };
       this.renderer.instances.push(t.ball);
       this.tethers.set(w, t);
     }
+    // Held, it runs itself: out as soon as it is home (SPIKE_AUTO_READY), and in again once it has
+    // come down and lain a moment (SPIKE_AUTO_DWELL). A tap still fires or reels by hand.
+    t.since += dt;
+    const auto = held && ((t.phase === 'ready' && t.since >= SPIKE_AUTO_READY) || (t.phase === 'landed' && t.resting && t.since >= SPIKE_AUTO_DWELL));
+    const pulled = pulledNow || auto;
+    const phaseWas = t.phase;
     if (pulled) {
       if (t.phase === 'ready') {
         t.phase = 'flying';
@@ -712,6 +724,7 @@ export class Arsenal {
         for (const link of t.links) link.hidden = true;
       }
     }
+    if (t.phase !== phaseWas) t.since = 0;
     if (t.phase !== 'ready') {
       translation(t.pos[0], t.pos[1], t.pos[2], t.ball.model as Float32Array);
       // The chain between the muzzle and the ball sags, sways and drags on the sand (while reeling it was stepped above, the ball on its end).
