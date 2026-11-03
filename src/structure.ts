@@ -1,7 +1,7 @@
 import { Mesh, MeshBuilder, box, material, multiply, rotationX, rotationY, scaling, transformPoint, translation, type Instance, type Mat4, type MeshData, type PointLight, type Renderer, type Vec, type Vec3 } from 'gridfall-engine';
 import { shatter, type Obstacle } from './impacts';
 import type { Loot } from './loot';
-import { CELL, MATERIALS, burns, canPlace, cellCentre, maxWeapons, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type PieceKind, type ShellBuild, type ShellType } from './shell';
+import { CELL, MATERIALS, MAX_CARRIED, burns, canPlace, cellCentre, maxWeapons, pieceHp, pieceType, pieceWeight, shellType, supported, type Piece, type PieceKind, type ShellBuild, type ShellType } from './shell';
 
 /**
  * What is built on the shell, drawn and kept: one mesh per piece in its cell, in body space,
@@ -18,6 +18,9 @@ const ELEVATE: [number, number] = [(-20 * Math.PI) / 180, (60 * Math.PI) / 180];
 const TURN_RATE = 9;
 /** A cannonball's speed: the barrel's elevation is solved so the ball comes down on the aim point. */
 export const CANNON_SPEED = 20;
+/** Picked-up weapons stack: each this many cells above the top of what is on, the leaning ones this many cells out to a side. */
+const STACK_STEP = 3;
+const STACK_LEAN = 1.5;
 /** A grenade's: slower, so it goes up and comes down on the aim point. */
 export const GRENADE_SPEED = 15;
 /** What a weapon lobs at, by kind (anything else shoots straight). */
@@ -296,7 +299,7 @@ export class Structure {
         this.renderer.instances.push(mi);
         part.moving = { instance: mi, kind: piece.kind };
       }
-      if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < maxWeapons(build.claws)) {
+      if (type.weapon && shape.muzzle && shape.pivot && this.weapons.length < (piece.stacked ? MAX_CARRIED : maxWeapons(build.claws))) {
         const weapon: Mounted = { piece, index, kick: 0, spin: 0, aimYaw: 0, aimPitch: 0, wantYaw: 0, wantPitch: 0, inRange: true, anchor: [0, 0, 0], muzzle: [0, 0, 0], direction: [0, 0, 1], chainLength: (CHAIN + BALL * 0.6) * WEAPON_SCALE, grow: 1 };
         this.weapons.push(weapon);
         const p = shape.pivot;
@@ -315,12 +318,20 @@ export class Structure {
     return null;
   }
 
-  /** Pick a weapon up off the beach: on in a free cell, facing forward, when there is a slot and a cell for it. */
+  /**
+   * Pick a weapon up off the beach (up to MAX_CARRIED in all): it goes on top of the stack above the build,
+   * higher with each one; every second and third one leans out to a side, turned 45 degrees that way.
+   */
   pickUp(kind: PieceKind): boolean {
-    if (this.weapons.length >= maxWeapons(this.build.claws)) return false;
-    const cell = this.freeCell();
-    if (!cell) return false;
-    const piece: Piece = { x: cell[0], y: cell[1], z: cell[2], kind, yaw: 0 };
+    if (this.weapons.length >= MAX_CARRIED) return false;
+    const [cols, rows] = this.shell.grid;
+    let top = 0;
+    this.build.pieces.forEach((p, k) => {
+      if (!this.parts[k].dead) top = Math.max(top, p.y + (pieceType(p.kind).weapon ? STACK_STEP : 1));
+    });
+    const n = this.build.pieces.filter((p, k) => p.stacked && !this.parts[k].dead).length;
+    const lean = n % 3 === 0 ? 0 : n % 3 === 1 ? 1 : -1;
+    const piece: Piece = { x: (cols - 1) / 2 + lean * STACK_LEAN, y: top, z: (rows - 1) / 2, kind, yaw: lean * 0.5, stacked: true };
     this.build.pieces.push(piece);
     this.addPart(piece, this.build.pieces.length - 1);
     this.onChange?.();
@@ -342,7 +353,8 @@ export class Structure {
 
   /** What is still on weighs this much (the claws apart). */
   weight(): number {
-    return this.build.pieces.reduce((w, p, i) => (this.parts[i].dead ? w : w + pieceWeight(p)), 0);
+    // A stacked weapon counts half: carrying a tower of them should slow the crab, not stop it.
+    return this.build.pieces.reduce((w, p, i) => (this.parts[i].dead ? w : w + pieceWeight(p) * (p.stacked ? 0.5 : 1)), 0);
   }
 
   /** Hit points left of piece `i` as a share. */
@@ -381,6 +393,38 @@ export class Structure {
   /** Every gun fires dead level (Bullet Hell): no elevation toward the aim point. */
   flatAim = false;
 
+  /**
+   * A hard knock (the crab's health dropping through a stage): the topmost weapon comes off, a stacked one
+   * first, and whatever was stacked on it; at least one weapon stays. Returns whether one came off.
+   */
+  shedTop(): boolean {
+    if (this.weapons.length <= 1) return false;
+    let best = -1;
+    let bestKey = -Infinity;
+    for (const w of this.weapons) {
+      const p = this.build.pieces[w.index];
+      const key = (p.stacked ? 1000 : 0) + p.y;
+      if (key > bestKey) {
+        bestKey = key;
+        best = w.index;
+      }
+    }
+    if (best < 0) return false;
+    this.drop(best, 3);
+    this.dropAbove(best);
+    this.onChange?.();
+    return true;
+  }
+
+  /** A stacked piece came off: everything stacked above it comes down too. */
+  private dropAbove(i: number): void {
+    const piece = this.build.pieces[i];
+    if (!piece?.stacked) return;
+    this.build.pieces.forEach((p, k) => {
+      if (p.stacked && p.y > piece.y && !this.parts[k].dead) this.drop(k, 2);
+    });
+  }
+
   /** Take `amount` off piece `i`; at nothing it is gone, and whatever it held up falls. */
   damage(i: number, amount: number): void {
     const part = this.parts[i];
@@ -388,13 +432,14 @@ export class Structure {
     part.hp -= amount;
     if (part.hp > 0) return;
     this.drop(i);
-    // Whatever is no longer joined to the deck comes down too.
-    const held = supported(this.shell, this.build.pieces.map((p, k) => (this.parts[k].dead ? null : p)).filter((p): p is Piece => !!p));
-    // `held` indexes the live list: map back.
+    this.dropAbove(i);
+    // Whatever is no longer joined to the deck comes down too (the stack stands on its own: see dropAbove).
     const live: number[] = [];
     this.parts.forEach((p, k) => {
-      if (!p.dead) live.push(k);
+      if (!p.dead && !this.build.pieces[k].stacked) live.push(k);
     });
+    // `held` indexes the live list: map back.
+    const held = supported(this.shell, live.map((k) => this.build.pieces[k]));
     live.forEach((k, liveIndex) => {
       if (!held.has(liveIndex)) this.drop(k);
     });

@@ -94,6 +94,8 @@ export interface Piece {
   yaw: number;
   /** A building block's material (left out: wood). */
   material?: Material;
+  /** Picked up on the beach and stacked above the build (not part of the grid: held up by the stack under it). */
+  stacked?: boolean;
 }
 
 export interface ShellBuild {
@@ -104,6 +106,8 @@ export interface ShellBuild {
 
 /** Action slots: the claws (when they work) and the weapons on the shell, four in all. */
 export const MAX_ACTIONS = 4;
+/** The most weapons a crab can carry, the ones it picks up stacked above its build. */
+export const MAX_CARRIED = 8;
 /** Weapons mounted at once: three beside working claws; four when the claws are the tiny ones that cannot bite. */
 export function maxWeapons(claws: ClawKind): number {
   return CLAWS[claws].works ? MAX_ACTIONS - 1 : MAX_ACTIONS;

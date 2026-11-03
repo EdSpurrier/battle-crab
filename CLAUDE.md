@@ -134,6 +134,16 @@ The build runs locally, so the private engine needs no token in CI.
 `Models/*.glb` are the game's source models (the siege snail rig is the first); the model viewer lists
 them automatically. Keep the folder flat; a file dropped in shows on the next dev reload or build.
 
+## Carrying more
+Weapons found on the beach stack above the build (`Structure.pickUp`, `Piece.stacked`): each STACK_STEP cells above the
+top of what is on, every second and third one leaning STACK_LEAN cells out to a side and turned 45 degrees, up to
+MAX_CARRIED (8) weapons in all. A stacked piece is held up by the stack, not the grid: when one comes off, everything
+stacked above it comes too (`dropAbove`). Stacked weapons weigh half. Each time the player's health drops through a
+quarter (main.ts HEALTH_STAGES) the top weapon is shot off (`shedTop`, a stacked one first, never the last). Weapons
+past the four action slots fire with the left button in simple firing and with the last slot otherwise (`extras()`;
+its chip shows +N). Weapons lying about turn, bob, glow and send up sparks; one that has just come off waits WEAPON_WAIT
+(2.5 s) before it can be picked up. A crack loses the stack: the player comes back with the build as made.
+
 ## Weight
 `Player.setWeight(structure.weight() + claws)`: speed and jump scale by `weightFactor` (halved at 45). Called at
 the start and from `structure.onChange` as pieces come off.
