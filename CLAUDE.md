@@ -221,6 +221,9 @@ a round crab pushed out of turned boxes each frame (`unblock`), so a crab can hi
 - The bommy knocker: held, it whirls its ball round the crab at shell height (spinning up over KNOCK_SPIN_UP to
   KNOCK_SPIN_MAX rad/s, the chain KNOCK_CHAIN × the pole's and never stretched), hitting what it sweeps through; let go,
   the ball flies on round and swings to rest.
+- Close in: barrels tip down to 75 degrees (structure.ts ELEVATE), so a gun on the tower can still hit the sand by the
+  crab's feet; a shot is tested from the barrel's root (weapons.ts BARREL_BACK), so a crab right against the gun is hit;
+  topdown, a crab under the cursor is aimed at itself (`Controls.targetUnder`, `World.firstMoving`), not the sand behind it.
 - Firing, two schemes (settings, Controls.fire): simple (the default) fires every weapon on the left button and nips
   with the claws on the right (held: a nip every 0.4 s); action slots is the one below. Bullet Hell keeps its own two buttons.
 - Actions: four slots (main.ts `actions()`): the claws first when they work, then the weapons on the shell in

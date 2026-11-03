@@ -118,6 +118,8 @@ const isCombatant = (o: unknown): o is Combatant => !!o && typeof o === 'object'
 const BALL: Vec = [0.12, 0.12, 0.13];
 const SPIKE: Vec = [0.2, 0.2, 0.22];
 const TRACER_SPEED = 70;
+/** How far back along the barrel a shot is tested from (about a barrel's length, drawn three times size). */
+const BARREL_BACK = 0.9;
 const GUN_RANGE = 80;
 /** How many shots (or seconds of flame) a weapon carries. */
 export const AMMO: Record<PieceKind, number> = { plank: 0, beam: 0, joint: 0, cannon: 10, gatling: 300, machinegun: 150, flamethrower: 12, knocker: Infinity, spikeball: Infinity, fireworks: 18, grenade: 14 };
@@ -947,7 +949,10 @@ export class Arsenal {
     const d: Vec3 = [facing[0] + (Math.random() - 0.5) * spread, facing[1] + (Math.random() - 0.5) * spread, facing[2] + (Math.random() - 0.5) * spread];
     const l = Math.hypot(d[0], d[1], d[2]) || 1;
     const dir: Vec3 = [d[0] / l, d[1] / l, d[2] / l];
-    const hit = this.world.raycast(muzzle, dir, GUN_RANGE, this.owner, this.structure.flatAim);
+    // Tested from the barrel's root, not its end: a crab right up against the gun (inside the barrel's reach) is still hit.
+    const root: Vec3 = [muzzle[0] - dir[0] * BARREL_BACK, muzzle[1] - dir[1] * BARREL_BACK, muzzle[2] - dir[2] * BARREL_BACK];
+    const hit = this.world.raycast(root, dir, GUN_RANGE + BARREL_BACK, this.owner, this.structure.flatAim);
+    if (hit) hit.distance = Math.max(0, hit.distance - BARREL_BACK);
     const flight = (hit ? hit.distance : GUN_RANGE) / TRACER_SPEED;
     if (hit) this.pending.push({ at: this.clock + flight, hit, dir, damage, size, blast });
     this.flash(muzzle, [1, 0.85, 0.5], 0.07, 5, 35);

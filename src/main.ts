@@ -141,6 +141,11 @@ const LOOK_SPEED = 0.0022;
 const PAD_LOOK = 2.6;
 const controls = new Controls(renderer, camera, canvas, ground, LOOK_SPEED);
 const look = installLook(document.body, renderer, camera, mist, controls);
+// Topdown: the cursor over a crab (not the player's own) aims at the middle of the box it is over.
+controls.targetUnder = (from, dir) => {
+  const on = world.firstMoving(from, dir, 2000, player);
+  return on ? [on.box.center[0], on.box.center[1], on.box.center[2]] : null;
+};
 // Opening the panel gives the cursor back (so it can be used); the game plays on underneath.
 look.panel.section('Game').toggle_('game.unlimitedAmmo', 'Unlimited ammo', () => unlimitedAmmo, (v) => {
   unlimitedAmmo = v;

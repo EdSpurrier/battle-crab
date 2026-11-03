@@ -2,7 +2,7 @@ import { OverlayMesh, translation, type Renderer, type Vec3 } from 'gridfall-eng
 import type { ThirdPersonCamera } from './camera';
 import type { Ground } from './ground';
 import { band, emptyOverlay, joinOverlays, ringPoints } from './overlayShapes';
-import { pickGround } from './pick';
+import { pickGround, screenRay } from './pick';
 
 /**
  * Two ways to play, switched with a toggle (the settings, or C), topdown first:
@@ -71,6 +71,8 @@ export class Controls {
   private mouse: [number, number] | null = null;
   private jumpQueued = false;
   private readonly marker: { mesh: OverlayMesh; model: Float32Array; onTop: boolean };
+  /** Topdown: what a crab under the cursor's ray offers to aim at (its middle), or null; set by the game. */
+  targetUnder: ((from: Vec3, dir: Vec3) => Vec3 | null) | null = null;
   /** Called after the mode changes (the HUD, the pointer lock). */
   onModeChange: ((mode: ControlMode) => void) | null = null;
 
@@ -153,6 +155,13 @@ export class Controls {
     this.jumpQueued = false;
     if (!this.topDown) return { dir, faceYaw: this.camera.yaw, faceAlways: false, run, jump };
     this.aim = this.mouse ? pickGround(this.camera, this.canvas, this.mouse[0], this.mouse[1], (x, z) => this.ground.heightAt(x, z), this.ground.size) : null;
+    // A crab under the cursor is aimed at itself, not at the sand behind it (looking down at 45 degrees, that
+    // is a little way past a small crab, and the shots would go over it).
+    if (this.mouse && this.targetUnder) {
+      const ray = screenRay(this.camera, this.canvas, this.mouse[0], this.mouse[1]);
+      const on = this.targetUnder(ray.from, ray.dir);
+      if (on) this.aim = on;
+    }
     this.drawMarker();
     const faceYaw = this.aim ? Math.atan2(this.aim[0] - crab[0], this.aim[2] - crab[2]) : this.camera.yaw;
     return { dir, faceYaw, faceAlways: !!this.aim, run, jump };
