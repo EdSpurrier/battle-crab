@@ -136,7 +136,7 @@ them automatically. Keep the folder flat; a file dropped in shows on the next de
 
 ## Carrying more
 Weapons found on the beach stack above the build (`Structure.pickUp`, `Piece.stacked`): each STACK_STEP cells above the
-top of what is on, every second and third one leaning STACK_LEAN cells out to a side and turned 45 degrees, up to
+top of what is on, every second and third one STACK_LEAN cells out to a side, all facing forward, up to
 MAX_CARRIED (8) weapons in all. A stacked piece is held up by the stack, not the grid: when one comes off, everything
 stacked above it comes too (`dropAbove`). Stacked weapons weigh half. Each time the player's health drops through a
 quarter (main.ts HEALTH_STAGES) the top weapon is shot off (`shedTop`, a stacked one first, never the last). Weapons
