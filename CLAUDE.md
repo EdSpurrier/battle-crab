@@ -147,7 +147,8 @@ Grenades are olive pills with a brass band, tumbling end over end; they bounce o
 0.62) and go off on the fuse (1.9 s), or at once on a crab or a piece of one: a white flash, a rolling fireball, a
 shock ring of dust to the blast's edge, a black smoke column, sparks, sand clods and embers (debris.ts), a hard light and
 a camera shake (`ThirdPersonCamera.shake`, from World.blasts by distance). A cannonball's landing throws a dust ring out to
-its push radius. Every hit throws chunks of what it hit (Arsenal.chips: more and faster the harder it hits). The guns are drawn bigger with each stage (`Mounted.grow`, up to 2.4).
+its push radius. The spiky ball flies out at SPIKE_SPEED 34 and slams like a cannonball where it lands (Arsenal.slam: the
+dust ring, the push, the shake), and a smaller slam yanks it off the sand when the reel starts. Every hit throws chunks of what it hit (Arsenal.chips: more and faster the harder it hits). The guns are drawn bigger with each stage (`Mounted.grow`, up to 2.4).
 Waves (waves.ts, hell rules): a stage every 6 cracks, more opponents each stage (4, then 1.5 more a stage, up to 12),
 marchers always, gunners from 2, skirmishers 3, bruisers 4, rocketeers 5. Cracked, the run is over: back to the plain
 guns and stage one. Loose weapons cannot be picked up in this mode.

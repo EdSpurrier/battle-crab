@@ -21,7 +21,9 @@ export const CANNON_SPEED = 20;
 /** A grenade's: slower, so it goes up and comes down on the aim point. */
 export const GRENADE_SPEED = 15;
 /** What a weapon lobs at, by kind (anything else shoots straight). */
-export const LOB_SPEED: Partial<Record<Piece['kind'], number>> = { cannon: CANNON_SPEED, spikeball: CANNON_SPEED, grenade: GRENADE_SPEED };
+/** The spiky ball flies out this fast (the aim solves its arc for it). */
+export const SPIKE_SPEED = 34;
+export const LOB_SPEED: Partial<Record<Piece['kind'], number>> = { cannon: CANNON_SPEED, spikeball: SPIKE_SPEED, grenade: GRENADE_SPEED };
 const GRAVITY = 20;
 /** The knocker's chain (cell units, before the weapon scale) and the ball on its end. */
 const CHAIN = 0.55;
