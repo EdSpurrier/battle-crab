@@ -6,7 +6,7 @@ import { isPushable, radialImpulse, withLength } from './physics';
 import { PROP_LOOKS, isPropRef } from './props';
 import { debrisFor, type DebrisStuff } from './debris';
 import type { HitKind } from './combat';
-import { CANNON_SPEED, GRENADE_SPEED, isPartRef, type Mounted, type Structure } from './structure';
+import { CANNON_SPEED, GRENADE_SPEED, SPIKE_SPEED, isPartRef, type Mounted, type Structure } from './structure';
 
 /**
  * Firing what is mounted on the shell. One weapon is selected at a time (action slots 2 to 5;
@@ -123,7 +123,6 @@ const GRENADE_FUSE = 1.9;
 const GRENADE_BLAST = 3.6;
 const GRENADE_BOUNCE = 0.62;
 /** The spiky ball: how fast it leaves, how far its chain reaches, how fast it is reeled in. */
-const SPIKE_SPEED = 22;
 const CHAIN_REACH = 14;
 /** How fast the drum winds the chain in (units of chain a second); the ball is dragged along on its end. */
 const WINCH_SPEED = 8;
@@ -142,6 +141,15 @@ const CANNON_PUNCH = 14;
 const CANNON_PUSH = 14;
 const CANNON_PUSH_RADIUS = 4;
 const SPIKE_PUNCH = 0.65;
+/**
+ * The spiky ball's slams, as the cannonball's: where it lands, a ring of dust out to SPIKE_SLAM_RADIUS and a
+ * push on everything in it (a shake of the view when near); when the reel is started, the ball is yanked off
+ * the sand with a smaller one (SPIKE_YANK_*).
+ */
+const SPIKE_SLAM_RADIUS = CANNON_PUSH_RADIUS;
+const SPIKE_SLAM_PUSH = CANNON_PUSH;
+const SPIKE_YANK_RADIUS = 2.4;
+const SPIKE_YANK_PUSH = 7;
 const KNOCK_PUNCH = 0.75;
 const BULLET_NUDGE = 0.3;
 /** The spiky ball's chain: links in it. */
@@ -602,6 +610,9 @@ export class Arsenal {
       } else if (t.phase === 'flying' || t.phase === 'landed') {
         t.phase = 'reeling';
         t.resting = false;
+        // The drum bites: the ball is yanked off the sand with a thump, a burst of dust, and a jolt to all round it.
+        w.kick = 1;
+        this.slam(t.pos, SPIKE_YANK_RADIUS, SPIKE_YANK_PUSH);
       }
     }
     t.hitCool = Math.max(0, t.hitCool - dt);
@@ -613,6 +624,7 @@ export class Arsenal {
         // The heavy ball carries its speed into whatever it hits.
         this.cause('blow', t.pos);
         this.land(hit, 2, DAMAGE.spikeball, [t.vel[0] * SPIKE_PUNCH, Math.max(1.5, t.vel[1] * SPIKE_PUNCH), t.vel[2] * SPIKE_PUNCH]);
+        this.slam(hit.point, SPIKE_SLAM_RADIUS, SPIKE_SLAM_PUSH, hit.self ?? hit.owner);
         t.pos = [hit.point[0] + hit.normal[0] * 0.4, hit.point[1] + hit.normal[1] * 0.4, hit.point[2] + hit.normal[2] * 0.4];
         t.phase = 'landed';
         t.resting = true;
@@ -638,10 +650,12 @@ export class Arsenal {
         const next: Vec3 = [t.pos[0] + t.vel[0] * dt, t.pos[1] + t.vel[1] * dt, t.pos[2] + t.vel[2] * dt];
         const hit = this.world.segment(t.pos, next, this.owner);
         if (hit) {
+          const fall = Math.hypot(t.vel[0], t.vel[1], t.vel[2]);
           t.pos = [hit.point[0] + hit.normal[0] * 0.4, hit.point[1] + hit.normal[1] * 0.4, hit.point[2] + hit.normal[2] * 0.4];
           t.vel = [0, 0, 0];
           t.resting = true;
           impactFx(this.renderer, hit, 1);
+          if (fall > 4) this.slam(hit.point, SPIKE_SLAM_RADIUS * Math.min(1, fall / 12), SPIKE_SLAM_PUSH * Math.min(1, fall / 12));
         } else t.pos = next;
       }
     } else if (t.phase === 'reeling') {
@@ -788,6 +802,13 @@ export class Arsenal {
     debris.burst([x, y, z], 'sand', Math.round(6 + 3 * r), 7 + r, 0.11);
     debris.burst([x, y + 0.2, z], 'ember', Math.round(4 + 2 * r), 9 + r, 0.07);
     this.flash(at, [1, 0.65, 0.25], 0.32, 6 + r * 2.5, 70 + r * 18);
+  }
+
+  /** A heavy thing slamming down (or yanked up) at `at`: a ring of dust to `radius`, a push on all in it but `except`, sand flung. */
+  private slam(at: Vec3, radius: number, strength: number, except?: unknown): void {
+    const ground: Vec3 = [at[0], Math.min(at[1], this.world.heightAt(at[0], at[2]) + 0.3), at[2]];
+    this.dustRing(ground, radius);
+    this.pushAt(ground, radius, strength, except);
   }
 
   /** A ring of dust thrown out flat from `at` to `radius` (what a heavy landing or a shock wave reaches), and a puff over the middle. */
